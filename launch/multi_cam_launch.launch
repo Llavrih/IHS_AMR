@@ -1,0 +1,4 @@
+<launch>
+    <include file="$(find smartgv_realsense)/launch/cam_1.launch" />
+    <include file="$(find smartgv_realsense)/launch/cam_2.launch" />
+</launch>

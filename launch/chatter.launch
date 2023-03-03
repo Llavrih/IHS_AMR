@@ -1,0 +1,4 @@
+<launch>
+    <node name="vel" pkg="smartgv_realsense" type="vel.py" output="screen"></node>
+    <node name="mode" pkg="smartgv_realsense" type="mode.py" output="screen"></node>
+</launch>
