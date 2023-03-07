@@ -19,16 +19,18 @@ from ctypes import *
 from sklearn.cluster import DBSCAN
 from visualization_msgs.msg import Marker
 import random
+import threading
+import cupy as cp
 
 pub = rospy.Publisher('/pointcloud', PointCloud2, queue_size=10)
 pub_objects = rospy.Publisher('/pointcloud_objects', PointCloud2, queue_size=10)
-pub_clusters = rospy.Publisher('/pointcloud_clusters', PointCloud2, queue_size=10)
-
-
 #pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
 
-def callback(data_1,data_2):
+
+
+def DetectObjectsOnFloor(data_1,data_2):
     tic() 
+    
     
     # points_PCD = points_PCD.remove_duplicated_points(0.02)
     #points = PCDToNumpy(points_PCD)
@@ -42,12 +44,31 @@ def callback(data_1,data_2):
     point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
     
     #Escape room for increasing the speed.
+    point_cloud = PCDToNumpy(point_original)
+    rows_to_delete = np.where(point_cloud[:, 2] > 0.15)[0]
+    print(rows_to_delete.size)
+    point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
+    point_cloud_floor = NumpyToPCD(point_cloud_floor)
+    point_cloud_floor= o3d.geometry.PointCloud.random_down_sample(point_cloud_floor,0.2)
+    point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,2)
+
+    rows_to_delete = np.where(point_cloud[:, 2] < 0.15)[0]
+    print(rows_to_delete.size)
+    point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
+    point_cloud_up = NumpyToPCD(point_cloud_up)
+    point_cloud_up= o3d.geometry.PointCloud.random_down_sample(point_cloud_up,0.1)
+    point_cloud_up= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up,10)
     
-    point_original= o3d.geometry.PointCloud.random_down_sample(point_original,0.40)
-    point_original= o3d.geometry.PointCloud.uniform_down_sample(point_original,20)
-    point_original.remove_statistical_outlier(nb_neighbors=500,std_ratio=0.1)
-    point_original.remove_radius_outlier(nb_points=100, radius=0.1)
-    downsampled_original_np = (DownSample(PCDToNumpy(point_original),0.01))
+    point_cloud_up = (DownSample(PCDToNumpy(point_cloud_up),0.01))
+    point_cloud_up = NumpyToPCD(point_cloud_up)
+    point_cloud_up.remove_statistical_outlier(nb_neighbors=5, std_ratio=0.1)
+    point_cloud_up.remove_radius_outlier(nb_points=16, radius=0.1)
+
+    point_original = point_cloud_floor+point_cloud_up
+
+    #point_original.remove_statistical_outlier(nb_neighbors=500,std_ratio=0.1)
+    #point_original.remove_radius_outlier(nb_points=100, radius=0.1)
+    downsampled_original_np = (DownSample(PCDToNumpy(point_original),0.001))
     downsampled_original = NumpyToPCD(downsampled_original_np)
    
     """ Detect multiple planes from given point clouds
@@ -56,9 +77,9 @@ def callback(data_1,data_2):
         min_ratio (float, optional): The minimum left points ratio to end the Detection. Defaults to 0.05.
         threshold (float, optional): RANSAC threshold in (m). Defaults to 0.01.
     """
-    downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=200))
+    downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.01, max_nn=100))
     downsampled_original_np = PCDToNumpy(downsampled_original)
-    plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.5, threshold=0.05, init_n=3, iterations=100)
+    plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.5, threshold=0.01, init_n=3, iterations=50)
     planes = []
     boxes = []
     """find boxes for planes"""
@@ -68,8 +89,10 @@ def callback(data_1,data_2):
         boxes.append(box)
     #print('Planes detected: ',len(boxes))
     planes_np = (np.concatenate(planes, axis=0))
-    # planes = NumpyToPCD(np.concatenate(planes, axis=0))
-    
+    planes = NumpyToPCD(np.concatenate(planes, axis=0))
+    planes, ind = planes.remove_radius_outlier(nb_points=5, radius=0.01)
+    planes.paint_uniform_color([0.8, 0.1, 0.1])
+
     index_arr_new  =[]
     for i in range(len(index_arr)):
         index_arr_new = index_arr_new + index_arr[i]
@@ -81,26 +104,31 @@ def callback(data_1,data_2):
     #print(outlier)
     mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
     objects = outlier[mask[:,2]]
-    rows_to_delete = np.where(objects[:, 2] < 0.03)[0]
+    
+    objects_viz = NumpyToPCD(objects)
+
+    cl, ind =   objects_viz.remove_radius_outlier(nb_points=10, radius=0.01)
+    objects_viz = cl
+    objects_viz.paint_uniform_color([0.7, 0.8, 0.2])
+    
+    rows_to_delete = np.where(objects[:, 2] < 0.0)[0]
     # delete the rows from the matrix
     objects = np.delete(objects, rows_to_delete, axis=0)
-    if np.size(objects) != 0:
-        print(np.size(objects) )
-        centers_pcd, boxes_obsticles = clusteringObjects(objects)
-        if (boxes_obsticles and centers_pcd) != None:
-            visualize_bounding_boxes(boxes_obsticles)
-            Talker_Clusters(centers_pcd)
+    objects = PCDToNumpy(objects_viz)
+    # if np.size(objects) != 0:
+    #     centers_pcd, boxes_obsticles = clusteringObjects(objects)
+    #     if (boxes_obsticles and centers_pcd) != None:
+    #         visualize_bounding_boxes(boxes_obsticles)
+    #         Talker_Clusters(centers_pcd)
 
     objects = NumpyToPCD(objects)
     objects.paint_uniform_color([0.7, 0.8, 0.2])
-    objects.remove_statistical_outlier(nb_neighbors=20,std_ratio=0.01)
-    Talker_Objects(objects)
-    
+    objects.remove_statistical_outlier(nb_neighbors=20,std_ratio=0.04)
 
     Talker_PCD(downsampled_original)
+    Talker_Objects(objects)
     
     toc()
-    
 
 def combinePCD(data_1,data_2):
     pc1 = ros_numpy.numpify(data_1)
@@ -181,75 +209,18 @@ def TalkerTrafficLight(traffic_light):
         traffic_light = 3
     pub_traffic_light.publish(traffic_light)   
 
-
-def visualize_bounding_boxes(boxes):
-    marker_pub = rospy.Publisher('visualization_marker', Marker, queue_size=10)
-                
-    for i, box in enumerate(boxes):
-        x = box.center[0]
-        y = box.center[1]
-        z = box.center[2]
-        width = box.extent[2]
-        height = box.extent[1]
-        depth = box.extent[0]
-
-        # Create a marker message
-        marker = Marker()
-        marker.header.frame_id = "cam_1_link"
-        marker.header.stamp = rospy.Time.now()
-        marker.id = i
-        marker.type = Marker.CUBE
-        marker.action = Marker.ADD
-        marker.pose.position.x = x
-        marker.pose.position.y = y
-        marker.pose.position.z = z
-        marker.pose.orientation.w = 1.0
-        marker.scale.x = width
-        marker.scale.y = height
-        marker.scale.z = depth
-        marker.color.r = 1
-        marker.color.g = 0
-        marker.color.b = 0.3
-        marker.color.a = 0.7
-        # Publish the marker message
-        marker_pub.publish(marker)
-
-    for j in range(100):
-            if j > len(boxes):
-                marker = Marker()
-                marker.header.frame_id = "cam_1_link"
-                marker.id = j  # ID of the marker to delete
-                marker.action = Marker.DELETE
-                marker_pub.publish(marker)
-    
-    
-
 def clusteringObjects(objects):
-    # Perform DBSCAN clustering on the objects
-    clustering = DBSCAN(eps=0.2, min_samples=30).fit(objects)
+    # Sepparate objects
+    clustering = DBSCAN(eps=0.2, min_samples=20).fit(objects)
     # Extract the labels for each point indicating the cluster it belongs to
     labels = clustering.labels_
     # Identify the number of clusters and the points belonging to each cluster
     num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    if num_clusters == 0:
-        return
-    else:
-        clusters = [objects[labels == i] for i in range(num_clusters)]
-        # Compute the centers and bounding boxes of the clusters
-        centers = [np.mean(cluster, axis=0) for cluster in clusters]
-        boxes = []
-        for cluster in clusters:
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(cluster)
-            if len(pcd.points) < 4:
-                return None, None
-            bbox = pcd.get_oriented_bounding_box()
-            boxes.append(bbox)
-        # Convert the centers and bounding boxes to point cloud objects
-        centers_pcd = o3d.geometry.PointCloud()
-        centers_pcd.points = o3d.utility.Vector3dVector(np.stack(centers, axis=0))
-        boxes_pcd = boxes
-        return centers_pcd, boxes_pcd
+    clusters = [objects[labels == i] for i in range(num_clusters)]
+    centers = [np.mean(cluster, axis=0) for cluster in clusters]
+    clusters = np.stack(centers, axis=0)
+    clusters = NumpyToPCD(clusters)
+    return clusters
    
 def convertCloudFromOpen3dToRos(open3d_cloud, frame_id="odom"):
     """ converts PCD to PointCloud2
@@ -501,5 +472,5 @@ data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
 #drive_mode = message_filters.Subscriber("/lizard/drive_supervisor/mode", UInt8)
 #vel = message_filters.Subscriber("/lizard/velocity_controller/cmd_vel", Twist)
 ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
-ts.registerCallback(callback)
+ts.registerCallback(DetectObjectsOnFloor)
 rospy.spin()
