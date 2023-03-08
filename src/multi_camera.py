@@ -22,9 +22,7 @@ import random
 import threading
 import cupy as cp
 
-pub = rospy.Publisher('/pointcloud', PointCloud2, queue_size=10)
-pub_objects = rospy.Publisher('/pointcloud_objects', PointCloud2, queue_size=10)
-#pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
+
 
 
 
@@ -133,7 +131,7 @@ def DetectObjectsOnFloor(data_1,data_2):
 def combinePCD(data_1,data_2):
     pc1 = ros_numpy.numpify(data_1)
     pc2 = ros_numpy.numpify(data_2)
-    points=np.zeros((pc1.shape[0],3))
+    points=cp.zeros((pc1.shape[0],3))
 
     points1=np.zeros((pc1.shape[0],3))
     translation = [-0.15, -0.35,0]
@@ -465,12 +463,23 @@ def DrawResult(points,colors):
     pcd.colors = o3d.utility.Vector3dVector(colors)
     o3d.visualization.draw_geometries([pcd])
 
-rospy.init_node('listener', anonymous=True)
-data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
-data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
 
-#drive_mode = message_filters.Subscriber("/lizard/drive_supervisor/mode", UInt8)
-#vel = message_filters.Subscriber("/lizard/velocity_controller/cmd_vel", Twist)
-ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
-ts.registerCallback(DetectObjectsOnFloor)
-rospy.spin()
+if __name__ == '__main__':
+    try:
+        rospy.init_node('listener', anonymous=True)
+        data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
+        data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
+        #drive_mode = message_filters.Subscriber("/lizard/drive_supervisor/mode", UInt8)
+        #vel = message_filters.Subscriber("/lizard/velocity_controller/cmd_vel", Twist)
+        ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
+        ts.registerCallback(DetectObjectsOnFloor)
+        pub = rospy.Publisher('/pointcloud', PointCloud2, queue_size=10)
+        pub_objects = rospy.Publisher('/pointcloud_objects', PointCloud2, queue_size=10)
+        #pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
+        rospy.spin()
+    except rospy.ROSInterruptException:
+        pass
+
+
+
+
