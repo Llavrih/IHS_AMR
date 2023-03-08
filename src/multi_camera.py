@@ -23,12 +23,8 @@ import threading
 import cupy as cp
 
 
-
-
-
 def DetectObjectsOnFloor(data_1,data_2):
     tic() 
-    
     
     # points_PCD = points_PCD.remove_duplicated_points(0.02)
     #points = PCDToNumpy(points_PCD)
@@ -44,14 +40,12 @@ def DetectObjectsOnFloor(data_1,data_2):
     #Escape room for increasing the speed.
     point_cloud = PCDToNumpy(point_original)
     rows_to_delete = np.where(point_cloud[:, 2] > 0.15)[0]
-    print(rows_to_delete.size)
     point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
     point_cloud_floor = NumpyToPCD(point_cloud_floor)
     point_cloud_floor= o3d.geometry.PointCloud.random_down_sample(point_cloud_floor,0.2)
     point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,2)
 
-    rows_to_delete = np.where(point_cloud[:, 2] < 0.15)[0]
-    print(rows_to_delete.size)
+    rows_to_delete = np.where(point_cloud[:, 2] < 2)[0]
     point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
     point_cloud_up = NumpyToPCD(point_cloud_up)
     point_cloud_up= o3d.geometry.PointCloud.random_down_sample(point_cloud_up,0.1)
@@ -128,48 +122,121 @@ def DetectObjectsOnFloor(data_1,data_2):
     
     toc()
 
-def combinePCD(data_1,data_2):
-    pc1 = ros_numpy.numpify(data_1)
-    pc2 = ros_numpy.numpify(data_2)
-    points=cp.zeros((pc1.shape[0],3))
+# def combinePCD(data_1,data_2):
+#     pc1 = ros_numpy.numpify(data_1)
+#     pc2 = ros_numpy.numpify(data_2)
+#     points=cp.zeros((pc1.shape[0],3))
 
-    points1=np.zeros((pc1.shape[0],3))
-    translation = [-0.15, -0.35,0]
-    points1[:,0]=np.subtract(pc1['x'],translation[0])
-    points1[:,1]=np.subtract(pc1['y'],translation[1])
-    points1[:,2]=np.subtract(pc1['z'],translation[2])
-    #Translation between cameras
-    translation = [-0.15,0.35, 0]
+#     points1=np.zeros((pc1.shape[0],3))
+#     translation = [-0.15, -0.35,0]
+#     points1[:,0]=np.subtract(pc1['x'],translation[0])
+#     points1[:,1]=np.subtract(pc1['y'],translation[1])
+#     points1[:,2]=np.subtract(pc1['z'],translation[2])
+#     #Translation between cameras
+#     translation = [-0.15,0.35, 0]
     
-    points2=np.zeros((pc2.shape[0],3))
-    points2[:,0]=np.subtract(pc2['x'],translation[0])
-    points2[:,1]=np.subtract(pc2['y'],translation[1])
-    points2[:,2]=np.subtract(pc2['z'],translation[2])
+#     points2=np.zeros((pc2.shape[0],3))
+#     points2[:,0]=np.subtract(pc2['x'],translation[0])
+#     points2[:,1]=np.subtract(pc2['y'],translation[1])
+#     points2[:,2]=np.subtract(pc2['z'],translation[2])
     
     
-    points1 = (np.array(points1, dtype=np.float64))
-    points2 = (np.array(points2, dtype=np.float64))
+#     points1 = (np.array(points1, dtype=np.float64))
+#     points2 = (np.array(points2, dtype=np.float64))
     
 
-    #Rotation between cameras
-    rotation1 = [math.radians(30), math.radians(0), math.radians(0)]
+#     #Rotation between cameras
+#     rotation1 = [math.radians(30), math.radians(0), math.radians(0)]
     
-    points_PCD1 = NumpyToPCD(points1)
-    #R1 = points_PCD1.get_rotation_matrix_from_xyz((rotation1))
-    R1 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, -0.5],[0.0, 0.5, 0.8660254]]
-    points_PCD1.rotate(R1, center=(0, 0, 0))
-    points1 = PCDToNumpy(points_PCD1)
+#     points_PCD1 = NumpyToPCD(points1)
+#     #R1 = points_PCD1.get_rotation_matrix_from_xyz((rotation1))
+#     R1 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, -0.5],[0.0, 0.5, 0.8660254]]
+#     points_PCD1.rotate(R1, center=(0, 0, 0))
+#     points1 = PCDToNumpy(points_PCD1)
 
-    rotation2 = [math.radians(-30), math.radians(0), math.radians(0)]
+#     rotation2 = [math.radians(-30), math.radians(0), math.radians(0)]
     
-    points_PCD2 = NumpyToPCD(points2)
-    #R2 = points_PCD2.get_rotation_matrix_from_xyz((rotation2))
-    R2 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, 0.5],[0.0, -0.5, 0.8660254]]
-    points_PCD2.rotate(R2, center=(0, 0, 0))
-    points2 = PCDToNumpy(points_PCD2)
+#     points_PCD2 = NumpyToPCD(points2)
+#     #R2 = points_PCD2.get_rotation_matrix_from_xyz((rotation2))
+#     R2 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, 0.5],[0.0, -0.5, 0.8660254]]
+#     points_PCD2.rotate(R2, center=(0, 0, 0))
+#     points2 = PCDToNumpy(points_PCD2)
 
-    #Stack both pointclouds
+#     #Stack both pointclouds
     
+#     points = np.concatenate((points1,points2))
+#     #points = points1
+ 
+#     #Rotation of poitncloud in world cordinate system
+#     points_PCD = NumpyToPCD(points)
+#     R = points_PCD.get_rotation_matrix_from_xyz((math.radians(0), math.radians(-75), math.radians(0)))
+#     R = [[ 0.25881905, 0.0, -0.96592583],[ 0.0, 1.0, 0.0],[0.96592583, 0.0, 0.25881905]]
+
+#     points_PCD.rotate(R, center=(0, 0, 0))
+
+#     return points_PCD
+
+
+def combinePCD(data_1, data_2):
+    # Define a function that will run in a separate thread to process data_1
+
+    def process_data_1(data_1):
+        global points1
+        pc1 = ros_numpy.numpify(data_1)
+
+        points1=np.zeros((pc1.shape[0],3))
+        translation = [-0.15, -0.35,0]
+        points1[:,0]=np.subtract(pc1['x'],translation[0])
+        points1[:,1]=np.subtract(pc1['y'],translation[1])
+        points1[:,2]=np.subtract(pc1['z'],translation[2])
+        
+        points1 = (np.array(points1, dtype=np.float64))
+        
+        rotation1 = [math.radians(30), math.radians(0), math.radians(0)]
+        
+        points_PCD1 = NumpyToPCD(points1)
+        #R1 = points_PCD1.get_rotation_matrix_from_xyz((rotation1))
+        R1 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, -0.5],[0.0, 0.5, 0.8660254]]
+        points_PCD1.rotate(R1, center=(0, 0, 0))
+        points1 = PCDToNumpy(points_PCD1)
+        
+        return points1
+
+
+    # Define a function that will run in a separate thread to process data_2
+    def process_data_2(data_2):
+        global points2
+        pc2 = ros_numpy.numpify(data_2)
+        translation = [-0.15,0.35, 0]
+        
+        points2=np.zeros((pc2.shape[0],3))
+        points2[:,0]=np.subtract(pc2['x'],translation[0])
+        points2[:,1]=np.subtract(pc2['y'],translation[1])
+        points2[:,2]=np.subtract(pc2['z'],translation[2])
+        
+
+        points2 = (np.array(points2, dtype=np.float64))
+        
+        rotation2 = [math.radians(-30), math.radians(0), math.radians(0)]
+        
+        points_PCD2 = NumpyToPCD(points2)
+        #R2 = points_PCD2.get_rotation_matrix_from_xyz((rotation2))
+        R2 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, 0.5],[0.0, -0.5, 0.8660254]]
+        points_PCD2.rotate(R2, center=(0, 0, 0))
+        points2 = PCDToNumpy(points_PCD2)
+        
+        return points2
+
+    # Start two threads to process data_1 and data_2 simultaneously
+    thread_1 = threading.Thread(target=process_data_1, args=[data_1])
+    thread_2 = threading.Thread(target=process_data_2, args=[data_2])
+    thread_1.start()
+    thread_2.start()
+
+    # Wait for both threads to finish and get the results
+    thread_1.join()
+    thread_2.join()
+
     points = np.concatenate((points1,points2))
     #points = points1
  
@@ -464,22 +531,27 @@ def DrawResult(points,colors):
     o3d.visualization.draw_geometries([pcd])
 
 
+
+
 if __name__ == '__main__':
     try:
         rospy.init_node('listener', anonymous=True)
-        data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
-        data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         #drive_mode = message_filters.Subscriber("/lizard/drive_supervisor/mode", UInt8)
         #vel = message_filters.Subscriber("/lizard/velocity_controller/cmd_vel", Twist)
+        #ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
+        #ts.registerCallback(DetectObjectsOnFloor)
+        #data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
+        data_1 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
+        data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
         ts.registerCallback(DetectObjectsOnFloor)
+        
+            
         pub = rospy.Publisher('/pointcloud', PointCloud2, queue_size=10)
         pub_objects = rospy.Publisher('/pointcloud_objects', PointCloud2, queue_size=10)
-        #pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
         rospy.spin()
+        
+        rospy.spin()
+        
     except rospy.ROSInterruptException:
         pass
-
-
-
-
