@@ -25,7 +25,6 @@ import cupy as cp
 
 def DetectObjectsOnFloor(data_1,data_2):
     tic() 
-    
     # points_PCD = points_PCD.remove_duplicated_points(0.02)
     #points = PCDToNumpy(points_PCD)
 
@@ -42,10 +41,10 @@ def DetectObjectsOnFloor(data_1,data_2):
     rows_to_delete = np.where(point_cloud[:, 2] > 0.15)[0]
     point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
     point_cloud_floor = NumpyToPCD(point_cloud_floor)
-    point_cloud_floor= o3d.geometry.PointCloud.random_down_sample(point_cloud_floor,0.2)
-    point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,2)
+    point_cloud_floor= o3d.geometry.PointCloud.random_down_sample(point_cloud_floor,0.1)
+    #point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,2)
 
-    rows_to_delete = np.where(point_cloud[:, 2] < 2)[0]
+    rows_to_delete = np.where(point_cloud[:, 2] < 0.15)[0]
     point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
     point_cloud_up = NumpyToPCD(point_cloud_up)
     point_cloud_up= o3d.geometry.PointCloud.random_down_sample(point_cloud_up,0.1)
@@ -179,13 +178,15 @@ def DetectObjectsOnFloor(data_1,data_2):
 
 def combinePCD(data_1, data_2):
     # Define a function that will run in a separate thread to process data_1
-
+    y_translation = 0.39
+    x_translation = 0.2
+    x_translation_offset = -0.00875
     def process_data_1(data_1):
         global points1
         pc1 = ros_numpy.numpify(data_1)
 
         points1=np.zeros((pc1.shape[0],3))
-        translation = [-0.15, -0.35,0]
+        translation = [-x_translation+x_translation_offset, -y_translation,0]
         points1[:,0]=np.subtract(pc1['x'],translation[0])
         points1[:,1]=np.subtract(pc1['y'],translation[1])
         points1[:,2]=np.subtract(pc1['z'],translation[2])
@@ -207,7 +208,7 @@ def combinePCD(data_1, data_2):
     def process_data_2(data_2):
         global points2
         pc2 = ros_numpy.numpify(data_2)
-        translation = [-0.15,0.35, 0]
+        translation = [-x_translation-x_translation_offset,y_translation, 0]
         
         points2=np.zeros((pc2.shape[0],3))
         points2[:,0]=np.subtract(pc2['x'],translation[0])
@@ -540,9 +541,8 @@ if __name__ == '__main__':
         #vel = message_filters.Subscriber("/lizard/velocity_controller/cmd_vel", Twist)
         #ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
         #ts.registerCallback(DetectObjectsOnFloor)
-        #data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         data_1 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
-        data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
+        data_2 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
         ts.registerCallback(DetectObjectsOnFloor)
         
