@@ -22,257 +22,175 @@ import random
 import threading
 import cupy as cp
 
-
-def DetectObjectsOnFloor(data_1,data_2):
-    tic() 
-    # points_PCD = points_PCD.remove_duplicated_points(0.02)
-    #points = PCDToNumpy(points_PCD)
+def DetectObjects(data_1,data_2):
 
     points_PCD = combinePCD(data_1,data_2)
+    def DetectObjectsOnFloor(points_PCD):
+        original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
+        original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
+        origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+        point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
+        
+        #Escape room for increasing the speed.
+        point_cloud = PCDToNumpy(point_original)
+        rows_to_delete = np.where(point_cloud[:, 2] > 0.15)[0]
+        point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
+        point_cloud_floor = NumpyToPCD(point_cloud_floor)
+        point_cloud_floor= o3d.geometry.PointCloud.random_down_sample(point_cloud_floor,0.8)
+        point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,8)
 
-    original_box = DrawBoxAtPoint(0.5,1,lenght=3, r=0, g=1 , b=0.3)
-    original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
-    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
-    #point_original = NumpyToPCD(points)
-    point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
+        point_original = point_cloud_floor
+
+        downsampled_original_np = (DownSample(PCDToNumpy(point_original),0.001))
+        downsampled_original = NumpyToPCD(downsampled_original_np)
     
-    #Escape room for increasing the speed.
-    point_cloud = PCDToNumpy(point_original)
-    rows_to_delete = np.where(point_cloud[:, 2] > 0.15)[0]
-    point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
-    point_cloud_floor = NumpyToPCD(point_cloud_floor)
-    point_cloud_floor= o3d.geometry.PointCloud.random_down_sample(point_cloud_floor,0.8)
-    point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,8)
+        """ Detect multiple planes from given point clouds
+        Args:
+            points (np.ndarray):
+            min_ratio (float, optional): The minimum left points ratio to end the Detection. Defaults to 0.05.
+            threshold (float, optional): RANSAC threshold in (m). Defaults to 0.01.
+        """
+        #downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.01, max_nn=100))
+        downsampled_original_np = PCDToNumpy(downsampled_original)
+        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.5, threshold=0.01, init_n=3, iterations=50)
+        planes = []
+        boxes = []
+        """find boxes for planes"""
+        for _, plane in plane_list:
+            box = NumpyToPCD(plane).get_oriented_bounding_box()
+            planes.append(plane)
+            boxes.append(box)
+        planes_np = (np.concatenate(planes, axis=0))
+        planes = NumpyToPCD(np.concatenate(planes, axis=0))
+        planes, ind = planes.remove_radius_outlier(nb_points=5, radius=0.01)
+        planes.paint_uniform_color([0.8, 0.1, 0.1])
 
-    rows_to_delete = np.where(point_cloud[:, 2] < 2)[0]
-    point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
-    point_cloud_up = NumpyToPCD(point_cloud_up)
-    point_cloud_up= o3d.geometry.PointCloud.random_down_sample(point_cloud_up,0.1)
-    point_cloud_up= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up,10)
+        index_arr_new  =[]
+        for i in range(len(index_arr)):
+            index_arr_new = index_arr_new + index_arr[i]
+        outlier =  o3d.geometry.PointCloud.select_by_index(downsampled_original,index_arr_new,invert=True)
+
+        outlier = PCDToNumpy(outlier)
+        mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
+        objects = outlier[mask[:,2]]
+        
+        objects_viz = NumpyToPCD(objects)
+
+        cl, ind =   objects_viz.remove_radius_outlier(nb_points=10, radius=0.01)
+        objects_viz = cl
+        objects_viz.paint_uniform_color([0.7, 0.8, 0.2])
+        
+        rows_to_delete = np.where(objects[:, 2] < 0.0)[0]
+        # delete the rows from the matrix
+        objects = np.delete(objects, rows_to_delete, axis=0)
+        objects = PCDToNumpy(objects_viz)
+        objects = NumpyToPCD(objects)
+        objects.paint_uniform_color([0.7, 0.8, 0.2])
+        objects.remove_statistical_outlier(nb_neighbors=20,std_ratio=0.04)
+
+        Talker_PCD(downsampled_original,0)
+        Talker_PCD(objects,1)
+    def DetectObjectsInTheAir(points_PCD):
+        original_box = DrawBoxAtPoint(0.5,1,lenght=6, r=0, g=1 , b=0.3)
+        original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
+        origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+        #point_original = NumpyToPCD(points)
+        point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
+        
+        #Escape room for increasing the speed.
+        point_cloud = PCDToNumpy(point_original)
+
+
+        rows_to_delete = np.where(point_cloud[:, 2] < 0.15)[0]
+        point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
+        point_cloud_up = NumpyToPCD(point_cloud_up)
+        point_cloud_up= o3d.geometry.PointCloud.random_down_sample(point_cloud_up,0.5)
+        point_cloud_up= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up,20)
+        
+        point_cloud_up = (DownSample(PCDToNumpy(point_cloud_up),0.01))
+        point_cloud_up = NumpyToPCD(point_cloud_up)
+        point_cloud_up.remove_statistical_outlier(nb_neighbors=5, std_ratio=0.1)
+        point_cloud_up.remove_radius_outlier(nb_points=16, radius=0.1)
+
+        point_original = point_cloud_up
+
+        #point_original.remove_statistical_outlier(nb_neighbors=500,std_ratio=0.1)
+        #point_original.remove_radius_outlier(nb_points=100, radius=0.1)
+        downsampled_original_np = (DownSample(PCDToNumpy(point_original),0.02))
+        downsampled_original = NumpyToPCD(downsampled_original_np)
     
-    point_cloud_up = (DownSample(PCDToNumpy(point_cloud_up),0.01))
-    point_cloud_up = NumpyToPCD(point_cloud_up)
-    point_cloud_up.remove_statistical_outlier(nb_neighbors=5, std_ratio=0.1)
-    point_cloud_up.remove_radius_outlier(nb_points=16, radius=0.1)
+        """ Detect multiple planes from given point clouds
+        Args:
+            points (np.ndarray):
+            min_ratio (float, optional): The minimum left points ratio to end the Detection. Defaults to 0.05.
+            threshold (float, optional): RANSAC threshold in (m). Defaults to 0.01.
+        """
+        #downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=100))
+        downsampled_original_np = PCDToNumpy(downsampled_original)
+        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.55, threshold=0.1, init_n=3, iterations=100)
+        planes = []
+        boxes = []
+        """find boxes for planes"""
+        for _, plane in plane_list:
+            box = NumpyToPCD(plane).get_oriented_bounding_box()
+            planes.append(plane)
+            boxes.append(box)
+        #print('Planes detected: ',len(boxes))
+        planes_np = (np.concatenate(planes, axis=0))
+        planes = NumpyToPCD(np.concatenate(planes, axis=0))
+        #planes, ind = planes.remove_radius_outlier(nb_points=100, radius=0.01)
+        planes.paint_uniform_color([0.8, 0.1, 0.1])
 
-    point_original = point_cloud_floor+point_cloud_up
-
-    #point_original.remove_statistical_outlier(nb_neighbors=500,std_ratio=0.1)
-    #point_original.remove_radius_outlier(nb_points=100, radius=0.1)
-    downsampled_original_np = (DownSample(PCDToNumpy(point_original),0.001))
-    downsampled_original = NumpyToPCD(downsampled_original_np)
-   
-    """ Detect multiple planes from given point clouds
-    Args:
-        points (np.ndarray):
-        min_ratio (float, optional): The minimum left points ratio to end the Detection. Defaults to 0.05.
-        threshold (float, optional): RANSAC threshold in (m). Defaults to 0.01.
-    """
-    downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.01, max_nn=100))
-    downsampled_original_np = PCDToNumpy(downsampled_original)
-    plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.5, threshold=0.01, init_n=3, iterations=50)
-    planes = []
-    boxes = []
-    """find boxes for planes"""
-    for _, plane in plane_list:
-        box = NumpyToPCD(plane).get_oriented_bounding_box()
-        planes.append(plane)
-        boxes.append(box)
-    #print('Planes detected: ',len(boxes))
-    planes_np = (np.concatenate(planes, axis=0))
-    planes = NumpyToPCD(np.concatenate(planes, axis=0))
-    planes, ind = planes.remove_radius_outlier(nb_points=5, radius=0.01)
-    planes.paint_uniform_color([0.8, 0.1, 0.1])
-
-    index_arr_new  =[]
-    for i in range(len(index_arr)):
-        index_arr_new = index_arr_new + index_arr[i]
-    #print("index arr new",(index_arr_new))    
-    outlier =  o3d.geometry.PointCloud.select_by_index(downsampled_original,index_arr_new,invert=True)
+        index_arr_new  =[]
+        for i in range(len(index_arr)):
+            index_arr_new = index_arr_new + index_arr[i]
+        #print("index arr new",(index_arr_new))    
+        outlier =  o3d.geometry.PointCloud.select_by_index(downsampled_original,index_arr_new,invert=True)
 
 
-    outlier = PCDToNumpy(outlier)
-    #print(outlier)
-    mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
-    objects = outlier[mask[:,2]]
-    
-    objects_viz = NumpyToPCD(objects)
+        outlier = PCDToNumpy(outlier)
+        #print(outlier)
+        mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
+        objects = outlier[mask[:,2]]
+        
+        objects_viz = NumpyToPCD(objects)
 
-    cl, ind =   objects_viz.remove_radius_outlier(nb_points=10, radius=0.01)
-    objects_viz = cl
-    objects_viz.paint_uniform_color([0.7, 0.8, 0.2])
-    
-    rows_to_delete = np.where(objects[:, 2] < 0.0)[0]
-    # delete the rows from the matrix
-    objects = np.delete(objects, rows_to_delete, axis=0)
-    objects = PCDToNumpy(objects_viz)
-    # if np.size(objects) != 0:
-    #     centers_pcd, boxes_obsticles = clusteringObjects(objects)
-    #     if (boxes_obsticles and centers_pcd) != None:
-    #         visualize_bounding_boxes(boxes_obsticles)
-    #         Talker_Clusters(centers_pcd)
+        cl, ind =   objects_viz.remove_radius_outlier(nb_points=20, radius=0.2)
+        objects_viz = cl
+        objects_viz.paint_uniform_color([0.7, 0.8, 0.2])
+        
+        rows_to_delete = np.where(objects[:, 2] < 0.0)[0]
+        # delete the rows from the matrix
+        objects = np.delete(objects, rows_to_delete, axis=0)
+        objects = PCDToNumpy(objects_viz)
+        # if np.size(objects) != 0:
+        #     centers_pcd, boxes_obsticles = clusteringObjects(objects)
+        #     if (boxes_obsticles and centers_pcd) != None:
+        #         visualize_bounding_boxes(boxes_obsticles)
+        #         Talker_Clusters(centers_pcd)
 
-    objects = NumpyToPCD(objects)
-    objects.paint_uniform_color([0.7, 0.8, 0.2])
-    objects.remove_statistical_outlier(nb_neighbors=20,std_ratio=0.04)
+        objects = NumpyToPCD(objects)
+        objects.paint_uniform_color([0.7, 0.8, 0.2])
+        #objects.remove_statistical_outlier(nb_neighbors=20,std_ratio=0.04)
 
-    Talker_PCD(downsampled_original,0)
-    Talker_PCD(objects,1)
-    
-    toc()
+        Talker_PCD(downsampled_original,2)
+        Talker_PCD(objects,3)
 
-def DetectObjectsInTheAir(data_1,data_2):
-    tic() 
-    # points_PCD = points_PCD.remove_duplicated_points(0.02)
-    #points = PCDToNumpy(points_PCD)
+    try:
+        tic()
+        thread1 = threading.Thread(target=DetectObjectsOnFloor, args = [points_PCD])
+        thread2 = threading.Thread(target=DetectObjectsInTheAir, args = [points_PCD])
 
-    points_PCD = combinePCD(data_1,data_2)
+        thread1.start()
+        thread2.start()
 
-    original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
-    original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
-    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
-    #point_original = NumpyToPCD(points)
-    point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
-    
-    #Escape room for increasing the speed.
-    point_cloud = PCDToNumpy(point_original)
-    rows_to_delete = np.where(point_cloud[:, 2] < 3)[0]
-    point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
-    point_cloud_floor = NumpyToPCD(point_cloud_floor)
-    point_cloud_floor= o3d.geometry.PointCloud.random_down_sample(point_cloud_floor,0.8)
-    point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,10)
-
-    rows_to_delete = np.where(point_cloud[:, 2] < 0.15)[0]
-    point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
-    point_cloud_up = NumpyToPCD(point_cloud_up)
-    point_cloud_up= o3d.geometry.PointCloud.random_down_sample(point_cloud_up,0.5)
-    point_cloud_up= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up,20)
-    
-    point_cloud_up = (DownSample(PCDToNumpy(point_cloud_up),0.01))
-    point_cloud_up = NumpyToPCD(point_cloud_up)
-    point_cloud_up.remove_statistical_outlier(nb_neighbors=5, std_ratio=0.1)
-    point_cloud_up.remove_radius_outlier(nb_points=16, radius=0.1)
-
-    point_original = point_cloud_floor+point_cloud_up
-
-    #point_original.remove_statistical_outlier(nb_neighbors=500,std_ratio=0.1)
-    #point_original.remove_radius_outlier(nb_points=100, radius=0.1)
-    downsampled_original_np = (DownSample(PCDToNumpy(point_original),0.02))
-    downsampled_original = NumpyToPCD(downsampled_original_np)
-   
-    """ Detect multiple planes from given point clouds
-    Args:
-        points (np.ndarray):
-        min_ratio (float, optional): The minimum left points ratio to end the Detection. Defaults to 0.05.
-        threshold (float, optional): RANSAC threshold in (m). Defaults to 0.01.
-    """
-    downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=100))
-    downsampled_original_np = PCDToNumpy(downsampled_original)
-    plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.55, threshold=0.1, init_n=3, iterations=100)
-    planes = []
-    boxes = []
-    """find boxes for planes"""
-    for _, plane in plane_list:
-        box = NumpyToPCD(plane).get_oriented_bounding_box()
-        planes.append(plane)
-        boxes.append(box)
-    #print('Planes detected: ',len(boxes))
-    planes_np = (np.concatenate(planes, axis=0))
-    planes = NumpyToPCD(np.concatenate(planes, axis=0))
-    #planes, ind = planes.remove_radius_outlier(nb_points=100, radius=0.01)
-    planes.paint_uniform_color([0.8, 0.1, 0.1])
-
-    index_arr_new  =[]
-    for i in range(len(index_arr)):
-        index_arr_new = index_arr_new + index_arr[i]
-    #print("index arr new",(index_arr_new))    
-    outlier =  o3d.geometry.PointCloud.select_by_index(downsampled_original,index_arr_new,invert=True)
+        thread1.join()
+        thread2.join()
+        toc()
 
 
-    outlier = PCDToNumpy(outlier)
-    #print(outlier)
-    mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
-    objects = outlier[mask[:,2]]
-    
-    objects_viz = NumpyToPCD(objects)
-
-    cl, ind =   objects_viz.remove_radius_outlier(nb_points=20, radius=0.2)
-    objects_viz = cl
-    objects_viz.paint_uniform_color([0.7, 0.8, 0.2])
-    
-    rows_to_delete = np.where(objects[:, 2] < 0.0)[0]
-    # delete the rows from the matrix
-    objects = np.delete(objects, rows_to_delete, axis=0)
-    objects = PCDToNumpy(objects_viz)
-    # if np.size(objects) != 0:
-    #     centers_pcd, boxes_obsticles = clusteringObjects(objects)
-    #     if (boxes_obsticles and centers_pcd) != None:
-    #         visualize_bounding_boxes(boxes_obsticles)
-    #         Talker_Clusters(centers_pcd)
-
-    objects = NumpyToPCD(objects)
-    objects.paint_uniform_color([0.7, 0.8, 0.2])
-    #objects.remove_statistical_outlier(nb_neighbors=20,std_ratio=0.04)
-
-    Talker_PCD(downsampled_original,2)
-    Talker_PCD(objects,3)
-    
-    toc()
-
-# def combinePCD(data_1,data_2):
-#     pc1 = ros_numpy.numpify(data_1)
-#     pc2 = ros_numpy.numpify(data_2)
-#     points=cp.zeros((pc1.shape[0],3))
-
-#     points1=np.zeros((pc1.shape[0],3))
-#     translation = [-0.15, -0.35,0]
-#     points1[:,0]=np.subtract(pc1['x'],translation[0])
-#     points1[:,1]=np.subtract(pc1['y'],translation[1])
-#     points1[:,2]=np.subtract(pc1['z'],translation[2])
-#     #Translation between cameras
-#     translation = [-0.15,0.35, 0]
-    
-#     points2=np.zeros((pc2.shape[0],3))
-#     points2[:,0]=np.subtract(pc2['x'],translation[0])
-#     points2[:,1]=np.subtract(pc2['y'],translation[1])
-#     points2[:,2]=np.subtract(pc2['z'],translation[2])
-    
-    
-#     points1 = (np.array(points1, dtype=np.float64))
-#     points2 = (np.array(points2, dtype=np.float64))
-    
-
-#     #Rotation between cameras
-#     rotation1 = [math.radians(30), math.radians(0), math.radians(0)]
-    
-#     points_PCD1 = NumpyToPCD(points1)
-#     #R1 = points_PCD1.get_rotation_matrix_from_xyz((rotation1))
-#     R1 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, -0.5],[0.0, 0.5, 0.8660254]]
-#     points_PCD1.rotate(R1, center=(0, 0, 0))
-#     points1 = PCDToNumpy(points_PCD1)
-
-#     rotation2 = [math.radians(-30), math.radians(0), math.radians(0)]
-    
-#     points_PCD2 = NumpyToPCD(points2)
-#     #R2 = points_PCD2.get_rotation_matrix_from_xyz((rotation2))
-#     R2 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, 0.5],[0.0, -0.5, 0.8660254]]
-#     points_PCD2.rotate(R2, center=(0, 0, 0))
-#     points2 = PCDToNumpy(points_PCD2)
-
-#     #Stack both pointclouds
-    
-#     points = np.concatenate((points1,points2))
-#     #points = points1
- 
-#     #Rotation of poitncloud in world cordinate system
-#     points_PCD = NumpyToPCD(points)
-#     R = points_PCD.get_rotation_matrix_from_xyz((math.radians(0), math.radians(-75), math.radians(0)))
-#     R = [[ 0.25881905, 0.0, -0.96592583],[ 0.0, 1.0, 0.0],[0.96592583, 0.0, 0.25881905]]
-
-#     points_PCD.rotate(R, center=(0, 0, 0))
-
-#     return points_PCD
-
+    except:
+        print("Error: unable to start thread")
 
 def combinePCD(data_1, data_2):
     # Define a function that will run in a separate thread to process data_1
@@ -363,7 +281,9 @@ def Talker_PCD(pointcloud,num):
         pub_objects_air.publish(pc) 
     if num == 4:
         pub_clusters.publish(pc) 
-    
+
+#def ObjectsToTrafic(objects):
+
 
 def TalkerTrafficLight(traffic_light):
     if traffic_light > 1 & traffic_light < 5:
@@ -420,7 +340,6 @@ def DistanceCalculator(arr):
         distance = np.sqrt(np.power(arr[i,0],2)+np.power(arr[i,1],2)+np.power(arr[i,2],2))
         distance_arr.append(distance)
     return distance_arr
-
        
 def DrawBoxAtPoint(center, edgeLength, lenght, r, g, b):
     #points = np.array([[0, -0.05, 0], [-0.05, -0.05, 0], [1, -1, 1], [-1, -1, 1], [0.05, 0.05, 0], [-0.05, 0.05, 0],[1, 1, 1], [-1, 1, 1]], dtype=np.float64)
@@ -531,7 +450,6 @@ def PCDToNumpy(pcd):
 
     return np.asarray(pcd.points)
 
-
 def NumpyToPCD(xyz):
     """ convert numpy ndarray to open3D point cloud
     Args:
@@ -555,7 +473,6 @@ def RemoveNan(points):
     """
 
     return points[~np.isnan(points[:, 0])]
-
 
 def DownSample(pts, voxel_size):
     """ down sample the point clouds
@@ -621,15 +538,11 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
 
     return plane_list, index_arr
 
-
 def DrawResult(points,colors):
     pcd = o3d.geometry.PointCloud(points)
     pcd.points = o3d.utility.Vector3dVector(points)
     pcd.colors = o3d.utility.Vector3dVector(colors)
     o3d.visualization.draw_geometries([pcd])
-
-
-
 
 if __name__ == '__main__':
     try:
@@ -641,9 +554,10 @@ if __name__ == '__main__':
         data_1 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         data_2 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
-        ts.registerCallback(DetectObjectsOnFloor)
-        ts.registerCallback(DetectObjectsInTheAir)
-        
+
+        ts.registerCallback(DetectObjects)
+        #ts.registerCallback(DetectObjectsOnFloor)
+        #ts.registerCallback(DetectObjectsInTheAir)
             
         pub = rospy.Publisher('/pointcloud', PointCloud2, queue_size=10)
         pub_objects = rospy.Publisher('/pointcloud_objects', PointCloud2, queue_size=10)
