@@ -80,10 +80,13 @@ def DetectObjects(data_1,data_2):
         cl, ind =   objects_viz.remove_radius_outlier(nb_points=10, radius=0.01)
         objects_viz = cl
         objects_viz_np = PCDToNumpy(objects_viz)
-        if np.size(objects_viz_np) != 0:
+
+        if objects_viz_np is not None:
             centers_pcd, boxes_obsticles = clusteringObjects(objects_viz_np)
-            if (boxes_obsticles and centers_pcd) != None:
+            if (boxes_obsticles or centers_pcd) != None:
                 #visualize_bounding_boxes(boxes_obsticles)
+
+                DetectTrafficOnFloor(PCDToNumpy(centers_pcd))
                 Talker_PCD(centers_pcd,4)
         
         Talker_PCD(downsampled_original,0)
@@ -190,12 +193,28 @@ def DetectObjects(data_1,data_2):
     except:
         print("Error: unable to start thread")
 
+def DetectTrafficOnFloor(objects):
+    zone_estop = [0.3,1.6/2]
+    zone_1 = [1,1.8/2]
+    zone_2 = [1.7,2/2]
+    zone_3 = [2.5,2.2/2]
+    zone_4 = [3.2,2.4/2]
+    zone_5 = [5,2.6/2]
+    zones = [zone_estop,zone_1,zone_2,zone_3,zone_4,zone_4,zone_5]
+    for obj in objects:
+        for i, zone in enumerate(zones):
+            if (abs(obj[0])<= zone[0]) & (abs(obj[1])<= zone[1]):
+                print(obj,'Zone',i)
+                break
+    return 
+
+
 def combinePCD(data_1, data_2):
     # Define a function that will run in a separate thread to process data_1
     y_translation = 0.39
-    x_translation = 0.2
+    x_translation = 0.21
     x_translation_offset = -0.00875
-    z_trasnlation = -0.045
+    z_trasnlation = -0.018
     def process_data_1(data_1):
         global points1
         pc1 = ros_numpy.numpify(data_1)
@@ -258,7 +277,7 @@ def combinePCD(data_1, data_2):
  
     #Rotation of poitncloud in world cordinate system
     points_PCD = NumpyToPCD(points)
-    R = points_PCD.get_rotation_matrix_from_xyz((math.radians(0), math.radians(-75), math.radians(0)))
+    #R = points_PCD.get_rotation_matrix_from_xyz((math.radians(0), math.radians(-75), math.radians(0)))
     R = [[ 0.25881905, 0.0, -0.96592583],[ 0.0, 1.0, 0.0],[0.96592583, 0.0, 0.25881905]]
 
     points_PCD.rotate(R, center=(0, 0, 0))
@@ -289,15 +308,15 @@ def TalkerTrafficLight(traffic_light):
 
 def clusteringObjects(objects):
     # Perform DBSCAN clustering on the objects
-    clustering = DBSCAN(eps=0.2, min_samples=30).fit(objects)
+    clustering = DBSCAN(eps=0.2, min_samples=10).fit(objects)
     # Sepparate objects
-    clustering = DBSCAN(eps=0.2, min_samples=20).fit(objects)
+    clustering = DBSCAN(eps=0.2, min_samples=10).fit(objects)
     # Extract the labels for each point indicating the cluster it belongs to
     labels = clustering.labels_
     # Identify the number of clusters and the points belonging to each cluster
     num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
     if num_clusters == 0:
-        return
+        return None, None
     else:
         clusters = [objects[labels == i] for i in range(num_clusters)]
         # Compute the centers and bounding boxes of the clusters
