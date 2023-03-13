@@ -24,10 +24,12 @@ import cupy as cp
 
 
 def DetectObjects(data_1,data_2):
-
+    global load
+    load = 0.5
     points_PCD = combinePCD(data_1,data_2)
     tic()
     def DetectObjectsOnFloor(points_PCD):
+        global load
         original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
@@ -86,12 +88,15 @@ def DetectObjects(data_1,data_2):
             if (boxes_obsticles or centers_pcd) != None:
                 #visualize_bounding_boxes(boxes_obsticles)
 
-                DetectTrafficOnFloor(PCDToNumpy(centers_pcd))
+                traffic_light = DetectTraffic(PCDToNumpy(objects_viz),load)
+                TalkerTrafficLight(min(traffic_light))
                 Talker_PCD(centers_pcd,4)
         
         Talker_PCD(downsampled_original,0)
         Talker_PCD(objects_viz,1)
+
     def DetectObjectsInTheAir(points_PCD):
+        global load
         original_box = DrawBoxAtPoint(0.5,1,lenght=6, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
@@ -158,7 +163,8 @@ def DetectObjects(data_1,data_2):
 
         cl, ind =   objects_viz.remove_radius_outlier(nb_points=20, radius=0.2)
         objects_viz = cl
-        DetectTrafficInTheAir(PCDToNumpy(objects_viz),2)
+        traffic_light = DetectTraffic(PCDToNumpy(objects_viz),load)
+        TalkerTrafficLight(min(traffic_light))
         Talker_PCD(downsampled_original,2)
         Talker_PCD(objects_viz,3)
 
@@ -170,15 +176,16 @@ def DetectObjects(data_1,data_2):
         thread1.start()
         thread2.start()
         
-        thread1.join()
+        print(thread1.join())
         thread2.join()
+        
         toc()
 
 
     except:
         print("Error: unable to start thread")
 
-def DetectTrafficOnFloor(objects):
+def DetectTraffic(objects,load):
     zone_estop = [0.3,1.6/2]
     zone_1 = [1,1.8/2]
     zone_2 = [1.7,2/2]
@@ -186,27 +193,15 @@ def DetectTrafficOnFloor(objects):
     zone_4 = [3.2,2.4/2]
     zone_5 = [5,2.6/2]
     zones = [zone_estop,zone_1,zone_2,zone_3,zone_4,zone_4,zone_5]
-    for obj in objects:
-        for i, zone in enumerate(zones):
-            if (abs(obj[0])<= zone[0]) & (abs(obj[1])<= zone[1]):
-                print('Objects on floor are:',obj,'in zone',i)
-                break
-    return 
-
-def DetectTrafficInTheAir(objects,load):
-    zone_estop = [0.3,1.6/2]
-    zone_1 = [1,1.8/2]
-    zone_2 = [1.7,2/2]
-    zone_3 = [2.5,2.2/2]
-    zone_4 = [3.2,2.4/2]
-    zone_5 = [5,2.6/2]
-    zones = [zone_estop,zone_1,zone_2,zone_3,zone_4,zone_4,zone_5]
+    object_in_zone = []
     for obj in objects:
         for i, zone in enumerate(zones):
             if (abs(obj[0])<= zone[0]) & (abs(obj[1])<= zone[1]) & (abs(obj[2]) <= load):
-                print('Objects in the air are:',obj,'in zone',i)
+                #print('Objects in the air are:',obj,'in zone',i)
+                object_in_zone.append(i)
                 break
-    return 
+    #print(object_in_zone)
+    return object_in_zone
 
 
 def combinePCD(data_1, data_2):
@@ -302,9 +297,9 @@ def Talker_PCD(pointcloud,num):
         pub_clusters.publish(pc) 
 
 def TalkerTrafficLight(traffic_light):
-    if traffic_light > 1 & traffic_light < 5:
+    if traffic_light > 1 & traffic_light < 3:
         traffic_light = 2
-    if traffic_light >= 5:
+    if traffic_light >= 3:
         traffic_light = 3
     pub_traffic_light.publish(traffic_light)   
 
@@ -597,6 +592,7 @@ if __name__ == '__main__':
         pub_air = rospy.Publisher('/pointcloud_air', PointCloud2, queue_size=10)
         pub_objects_air = rospy.Publisher('/pointcloud_objects_air', PointCloud2, queue_size=10)
         pub_clusters = rospy.Publisher('/pointcloud_clusters', PointCloud2, queue_size=10)
+        pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
         rospy.spin()
         
     except rospy.ROSInterruptException:
