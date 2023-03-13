@@ -158,24 +158,9 @@ def DetectObjects(data_1,data_2):
 
         cl, ind =   objects_viz.remove_radius_outlier(nb_points=20, radius=0.2)
         objects_viz = cl
-        objects_viz.paint_uniform_color([0.7, 0.8, 0.2])
-        
-        rows_to_delete = np.where(objects[:, 2] < 0.0)[0]
-        # delete the rows from the matrix
-        objects = np.delete(objects, rows_to_delete, axis=0)
-        objects = PCDToNumpy(objects_viz)
-        # if np.size(objects) != 0:
-        #     centers_pcd, boxes_obsticles = clusteringObjects(objects)
-        #     if (boxes_obsticles and centers_pcd) != None:
-        #         visualize_bounding_boxes(boxes_obsticles)
-        #         Talker_Clusters(centers_pcd)
-
-        objects = NumpyToPCD(objects)
-        objects.paint_uniform_color([0.7, 0.8, 0.2])
-        #objects.remove_statistical_outlier(nb_neighbors=20,std_ratio=0.04)
-
+        DetectTrafficInTheAir(PCDToNumpy(objects_viz),2)
         Talker_PCD(downsampled_original,2)
-        Talker_PCD(objects,3)
+        Talker_PCD(objects_viz,3)
 
     try:
         
@@ -204,17 +189,34 @@ def DetectTrafficOnFloor(objects):
     for obj in objects:
         for i, zone in enumerate(zones):
             if (abs(obj[0])<= zone[0]) & (abs(obj[1])<= zone[1]):
-                print(obj,'Zone',i)
+                print('Objects on floor are:',obj,'in zone',i)
+                break
+    return 
+
+def DetectTrafficInTheAir(objects,load):
+    zone_estop = [0.3,1.6/2]
+    zone_1 = [1,1.8/2]
+    zone_2 = [1.7,2/2]
+    zone_3 = [2.5,2.2/2]
+    zone_4 = [3.2,2.4/2]
+    zone_5 = [5,2.6/2]
+    zones = [zone_estop,zone_1,zone_2,zone_3,zone_4,zone_4,zone_5]
+    for obj in objects:
+        for i, zone in enumerate(zones):
+            if (abs(obj[0])<= zone[0]) & (abs(obj[1])<= zone[1]) & (abs(obj[2]) <= load):
+                print('Objects in the air are:',obj,'in zone',i)
                 break
     return 
 
 
 def combinePCD(data_1, data_2):
     # Define a function that will run in a separate thread to process data_1
-    y_translation = 0.39
+    y_translation = 0.35
     x_translation = 0.21
     x_translation_offset = -0.00875
     z_trasnlation = -0.018
+    rotation_x = 28
+    rotation_y = 0
     def process_data_1(data_1):
         global points1
         pc1 = ros_numpy.numpify(data_1)
@@ -227,11 +229,11 @@ def combinePCD(data_1, data_2):
         
         points1 = (np.array(points1, dtype=np.float64))
         
-        rotation1 = [math.radians(30), math.radians(0), math.radians(0)]
+        rotation1 = [math.radians(rotation_x), math.radians(rotation_y), math.radians(0)]
         
         points_PCD1 = NumpyToPCD(points1)
-        #R1 = points_PCD1.get_rotation_matrix_from_xyz((rotation1))
-        R1 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, -0.5],[0.0, 0.5, 0.8660254]]
+        R1 = points_PCD1.get_rotation_matrix_from_xyz((rotation1))
+        #R1 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, -0.5],[0.0, 0.5, 0.8660254]]
         points_PCD1.rotate(R1, center=(0, 0, 0))
         points1 = PCDToNumpy(points_PCD1)
         
@@ -252,11 +254,11 @@ def combinePCD(data_1, data_2):
 
         points2 = (np.array(points2, dtype=np.float64))
         
-        rotation2 = [math.radians(-30), math.radians(0), math.radians(0)]
+        rotation2 = [math.radians(-rotation_x), math.radians(rotation_y), math.radians(0)]
         
         points_PCD2 = NumpyToPCD(points2)
-        #R2 = points_PCD2.get_rotation_matrix_from_xyz((rotation2))
-        R2 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, 0.5],[0.0, -0.5, 0.8660254]]
+        R2 = points_PCD2.get_rotation_matrix_from_xyz((rotation2))
+        #R2 = [[1.0, 0.0, 0.0],[0.0, 0.8660254, 0.5],[0.0, -0.5, 0.8660254]]
         points_PCD2.rotate(R2, center=(0, 0, 0))
         points2 = PCDToNumpy(points_PCD2)
         
@@ -308,9 +310,9 @@ def TalkerTrafficLight(traffic_light):
 
 def clusteringObjects(objects):
     # Perform DBSCAN clustering on the objects
-    clustering = DBSCAN(eps=0.2, min_samples=10).fit(objects)
+    clustering = DBSCAN(eps=0.2, min_samples=3).fit(objects)
     # Sepparate objects
-    clustering = DBSCAN(eps=0.2, min_samples=10).fit(objects)
+    clustering = DBSCAN(eps=0.2, min_samples=3).fit(objects)
     # Extract the labels for each point indicating the cluster it belongs to
     labels = clustering.labels_
     # Identify the number of clusters and the points belonging to each cluster
