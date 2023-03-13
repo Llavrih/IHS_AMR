@@ -22,9 +22,11 @@ import random
 import threading
 import cupy as cp
 
+
 def DetectObjects(data_1,data_2):
 
     points_PCD = combinePCD(data_1,data_2)
+    tic()
     def DetectObjectsOnFloor(points_PCD):
         original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
@@ -75,21 +77,17 @@ def DetectObjects(data_1,data_2):
         objects = outlier[mask[:,2]]
         
         objects_viz = NumpyToPCD(objects)
-
         cl, ind =   objects_viz.remove_radius_outlier(nb_points=10, radius=0.01)
         objects_viz = cl
-        objects_viz.paint_uniform_color([0.7, 0.8, 0.2])
+        objects_viz_np = PCDToNumpy(objects_viz)
+        if np.size(objects_viz_np) != 0:
+            centers_pcd, boxes_obsticles = clusteringObjects(objects_viz_np)
+            if (boxes_obsticles and centers_pcd) != None:
+                #visualize_bounding_boxes(boxes_obsticles)
+                Talker_PCD(centers_pcd,4)
         
-        rows_to_delete = np.where(objects[:, 2] < 0.0)[0]
-        # delete the rows from the matrix
-        objects = np.delete(objects, rows_to_delete, axis=0)
-        objects = PCDToNumpy(objects_viz)
-        objects = NumpyToPCD(objects)
-        objects.paint_uniform_color([0.7, 0.8, 0.2])
-        objects.remove_statistical_outlier(nb_neighbors=20,std_ratio=0.04)
-
         Talker_PCD(downsampled_original,0)
-        Talker_PCD(objects,1)
+        Talker_PCD(objects_viz,1)
     def DetectObjectsInTheAir(points_PCD):
         original_box = DrawBoxAtPoint(0.5,1,lenght=6, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
@@ -177,13 +175,13 @@ def DetectObjects(data_1,data_2):
         Talker_PCD(objects,3)
 
     try:
-        tic()
+        
         thread1 = threading.Thread(target=DetectObjectsOnFloor, args = [points_PCD])
         thread2 = threading.Thread(target=DetectObjectsInTheAir, args = [points_PCD])
 
         thread1.start()
         thread2.start()
-
+        
         thread1.join()
         thread2.join()
         toc()
@@ -282,9 +280,6 @@ def Talker_PCD(pointcloud,num):
     if num == 4:
         pub_clusters.publish(pc) 
 
-#def ObjectsToTrafic(objects):
-
-
 def TalkerTrafficLight(traffic_light):
     if traffic_light > 1 & traffic_light < 5:
         traffic_light = 2
@@ -293,17 +288,34 @@ def TalkerTrafficLight(traffic_light):
     pub_traffic_light.publish(traffic_light)   
 
 def clusteringObjects(objects):
+    # Perform DBSCAN clustering on the objects
+    clustering = DBSCAN(eps=0.2, min_samples=30).fit(objects)
     # Sepparate objects
     clustering = DBSCAN(eps=0.2, min_samples=20).fit(objects)
     # Extract the labels for each point indicating the cluster it belongs to
     labels = clustering.labels_
     # Identify the number of clusters and the points belonging to each cluster
     num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    clusters = [objects[labels == i] for i in range(num_clusters)]
-    centers = [np.mean(cluster, axis=0) for cluster in clusters]
-    clusters = np.stack(centers, axis=0)
-    clusters = NumpyToPCD(clusters)
-    return clusters
+    if num_clusters == 0:
+        return
+    else:
+        clusters = [objects[labels == i] for i in range(num_clusters)]
+        # Compute the centers and bounding boxes of the clusters
+        centers = [np.mean(cluster, axis=0) for cluster in clusters]
+        boxes = []
+        for cluster in clusters:
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(cluster)
+            if len(pcd.points) < 4:
+                return None, None
+            bbox = pcd.get_oriented_bounding_box()
+            boxes.append(bbox)
+        # Convert the centers and bounding boxes to point cloud objects
+        centers_pcd = o3d.geometry.PointCloud()
+        centers_pcd.points = o3d.utility.Vector3dVector(np.stack(centers, axis=0))
+        boxes_pcd = boxes
+        return centers_pcd, boxes_pcd
+
    
 def convertCloudFromOpen3dToRos(open3d_cloud, frame_id="odom"):
     """ converts PCD to PointCloud2
@@ -563,6 +575,7 @@ if __name__ == '__main__':
         pub_objects = rospy.Publisher('/pointcloud_objects', PointCloud2, queue_size=10)
         pub_air = rospy.Publisher('/pointcloud_air', PointCloud2, queue_size=10)
         pub_objects_air = rospy.Publisher('/pointcloud_objects_air', PointCloud2, queue_size=10)
+        pub_clusters = rospy.Publisher('/pointcloud_clusters', PointCloud2, queue_size=10)
         rospy.spin()
         
     except rospy.ROSInterruptException:
