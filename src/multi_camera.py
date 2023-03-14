@@ -206,11 +206,11 @@ def DetectTraffic(objects,load):
 
 def combinePCD(data_1, data_2):
     # Define a function that will run in a separate thread to process data_1
-    y_translation = 0.35
+    y_translation = 0.38
     x_translation = 0.21
     x_translation_offset = -0.00875
     z_trasnlation = -0.018
-    rotation_x = 28
+    rotation_x = 30
     rotation_y = 0
     def process_data_1(data_1):
         global points1
