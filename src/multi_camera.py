@@ -28,8 +28,14 @@ def DetectObjects(data_1,data_2):
     load = 0.5
     points_PCD = combinePCD(data_1,data_2)
     tic()
+    global traffic_light_up
+    global traffic_light_floor
+    
+    
     def DetectObjectsOnFloor(points_PCD):
         global load
+        global traffic_light_floor
+
         original_box = DrawBoxAtPoint(0.5,1,lenght=3, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
@@ -94,11 +100,10 @@ def DetectObjects(data_1,data_2):
         # TalkerTrafficLight(min(traffic_light))
 
         if np.size(objects_viz_np) != 0:
-            centers_pcd, boxes_obsticles = clusteringObjects(objects_viz_np)
-            if (boxes_obsticles or centers_pcd) != None:
+            centers_pcd = clusteringObjects(objects_viz_np)
+            if (centers_pcd) != None:
                 #visualize_bounding_boxes(boxes_obsticles)
-                traffic_light = DetectTraffic(PCDToNumpy(objects_viz),load)
-                TalkerTrafficLight(min(traffic_light))
+                traffic_light_floor = DetectTraffic(PCDToNumpy(objects_viz),load)
                 Talker_PCD(centers_pcd,4)
         
         Talker_PCD(downsampled_original,0)
@@ -106,6 +111,8 @@ def DetectObjects(data_1,data_2):
 
     def DetectObjectsInTheAir(points_PCD):
         global load
+        global traffic_light_up
+        traffic_light_up = []
         original_box = DrawBoxAtPoint(0.5,1,lenght=5, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
@@ -170,11 +177,11 @@ def DetectObjects(data_1,data_2):
 
         # cl, ind =   objects_viz.remove_radius_outlier(nb_points=20, radius=0.2)
         # objects_viz = cl
-        traffic_light = DetectTraffic(PCDToNumpy(objects_viz),load)
-        TalkerTrafficLight(min(traffic_light))
+        traffic_light_up = DetectTraffic(PCDToNumpy(objects_viz),load)
         Talker_PCD(downsampled_original,2)
         Talker_PCD(objects_viz,3)
 
+    
     try:
         
         thread1 = threading.Thread(target=DetectObjectsOnFloor, args = [points_PCD])
@@ -183,8 +190,9 @@ def DetectObjects(data_1,data_2):
         thread1.start()
         thread2.start()
         
-        print(thread1.join())
+        thread1.join()
         thread2.join()
+        TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
         
         toc()
 
@@ -351,32 +359,32 @@ def TalkerTrafficLight(traffic_light):
 
 def clusteringObjects(objects):
     # Perform DBSCAN clustering on the objects
-    clustering = DBSCAN(eps=0.2, min_samples=3).fit(objects)
+    clustering = DBSCAN(eps=0.1, min_samples=3).fit(objects)
     # Sepparate objects
-    clustering = DBSCAN(eps=0.2, min_samples=3).fit(objects)
+    #clustering = DBSCAN(eps=0.1, min_samples=3).fit(objects)
     # Extract the labels for each point indicating the cluster it belongs to
     labels = clustering.labels_
     # Identify the number of clusters and the points belonging to each cluster
     num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
     if num_clusters == 0:
-        return None, None
+        return None #, None
     else:
         clusters = [objects[labels == i] for i in range(num_clusters)]
         # Compute the centers and bounding boxes of the clusters
         centers = [np.mean(cluster, axis=0) for cluster in clusters]
-        boxes = []
-        for cluster in clusters:
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(cluster)
-            if len(pcd.points) < 4:
-                return None, None
-            bbox = pcd.get_oriented_bounding_box()
-            boxes.append(bbox)
-        # Convert the centers and bounding boxes to point cloud objects
+        # boxes = []
+        # for cluster in clusters:
+        #     pcd = o3d.geometry.PointCloud()
+        #     pcd.points = o3d.utility.Vector3dVector(cluster)
+        #     if len(pcd.points) < 4:
+        #         return None, None
+        #     bbox = pcd.get_oriented_bounding_box()
+        #     boxes.append(bbox)
+        # # Convert the centers and bounding boxes to point cloud objects
         centers_pcd = o3d.geometry.PointCloud()
         centers_pcd.points = o3d.utility.Vector3dVector(np.stack(centers, axis=0))
-        boxes_pcd = boxes
-        return centers_pcd, boxes_pcd
+        # boxes_pcd = boxes
+        return centers_pcd #, boxes_pcd
 
    
 def convertCloudFromOpen3dToRos(open3d_cloud, frame_id="odom"):
