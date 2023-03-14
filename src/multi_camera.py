@@ -41,11 +41,11 @@ def DetectObjects(data_1,data_2):
         point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
         point_cloud_floor = NumpyToPCD(point_cloud_floor)
         point_cloud_floor= o3d.geometry.PointCloud.random_down_sample(point_cloud_floor,0.8)
-        point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,8)
+        point_cloud_floor= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_floor,10)
 
         point_original = point_cloud_floor
 
-        downsampled_original_np = (DownSample(PCDToNumpy(point_original),0.001))
+        downsampled_original_np = (DownSample(PCDToNumpy(point_original),0.005))
         downsampled_original = NumpyToPCD(downsampled_original_np)
     
         """ Detect multiple planes from given point clouds
@@ -56,7 +56,7 @@ def DetectObjects(data_1,data_2):
         """
         #downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.01, max_nn=100))
         downsampled_original_np = PCDToNumpy(downsampled_original)
-        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.5, threshold=0.01, init_n=3, iterations=50)
+        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.4, threshold=0.01, init_n=100, iterations=30)
         planes = []
         boxes = []
         """find boxes for planes"""
@@ -66,7 +66,6 @@ def DetectObjects(data_1,data_2):
             boxes.append(box)
         planes_np = (np.concatenate(planes, axis=0))
         planes = NumpyToPCD(np.concatenate(planes, axis=0))
-        planes, ind = planes.remove_radius_outlier(nb_points=5, radius=0.01)
         planes.paint_uniform_color([0.8, 0.1, 0.1])
 
         index_arr_new  =[]
@@ -79,11 +78,20 @@ def DetectObjects(data_1,data_2):
         objects = outlier[mask[:,2]]
         
         objects_viz = NumpyToPCD(objects)
-        cl, ind =   objects_viz.remove_radius_outlier(nb_points=10, radius=0.01)
-        objects_viz = cl
+        cl_arr = o3d.geometry.PointCloud()
+        radii = np.array([0.005 + 0.005*i for i in range(0, 5, 1)])
+        distance_cut = np.array([i * 0.6 for i in range(0, 5, 1)])
+        for i in range(5):
+            rows_to_delete = np.where(abs(objects[:, 0]) > distance_cut[i])[0]
+            objects_cut = np.delete(objects, rows_to_delete, axis=0)
+            objects_cut = NumpyToPCD(objects_cut) 
+            if not objects_cut.is_empty():
+                cl, ind =   objects_cut.remove_radius_outlier(nb_points=10, radius=radii[i])
+                cl_arr = cl_arr + cl
+        objects_viz = cl_arr
         objects_viz_np = PCDToNumpy(objects_viz)
 
-        if objects_viz_np is not None:
+        if np.size(objects_viz_np) != 0:
             centers_pcd, boxes_obsticles = clusteringObjects(objects_viz_np)
             if (boxes_obsticles or centers_pcd) != None:
                 #visualize_bounding_boxes(boxes_obsticles)
@@ -111,7 +119,7 @@ def DetectObjects(data_1,data_2):
         point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
         point_cloud_up = NumpyToPCD(point_cloud_up)
         point_cloud_up= o3d.geometry.PointCloud.random_down_sample(point_cloud_up,0.5)
-        point_cloud_up= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up,20)
+        point_cloud_up= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up,30)
         
         point_cloud_up = (DownSample(PCDToNumpy(point_cloud_up),0.01))
         point_cloud_up = NumpyToPCD(point_cloud_up)
@@ -203,6 +211,45 @@ def DetectTraffic(objects,load):
     #print(object_in_zone)
     return object_in_zone
 
+def visualize_bounding_boxes(boxes):
+    marker_pub = rospy.Publisher('visualization_marker', Marker, queue_size=10)
+
+    for i, box in enumerate(boxes):
+        x = box.center[0]
+        y = box.center[1]
+        z = box.center[2]
+        width = box.extent[2]
+        height = box.extent[1]
+        depth = box.extent[0]
+
+        # Create a marker message
+        marker = Marker()
+        marker.header.frame_id = "cam_1_link"
+        marker.header.stamp = rospy.Time.now()
+        marker.id = i
+        marker.type = Marker.CUBE
+        marker.action = Marker.ADD
+        marker.pose.position.x = x
+        marker.pose.position.y = y
+        marker.pose.position.z = z
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = width
+        marker.scale.y = height
+        marker.scale.z = depth
+        marker.color.r = 1
+        marker.color.g = 0
+        marker.color.b = 0.3
+        marker.color.a = 0.7
+        # Publish the marker message
+        marker_pub.publish(marker)
+
+    for j in range(100):
+            if j > len(boxes):
+                marker = Marker()
+                marker.header.frame_id = "cam_1_link"
+                marker.id = j  # ID of the marker to delete
+                marker.action = Marker.DELETE
+                marker_pub.publish(marker)
 
 def combinePCD(data_1, data_2):
     # Define a function that will run in a separate thread to process data_1
@@ -340,21 +387,15 @@ def convertCloudFromOpen3dToRos(open3d_cloud, frame_id="odom"):
     Returns:
         PointCloud2
     """ 
-    # Set "header"
     header = Header()
     header.stamp = rospy.Time.now()
     header.frame_id = frame_id
     fields = [PointField('x', 0, PointField.FLOAT32, 1),
-                  PointField('y', 4, PointField.FLOAT32, 1),
-                  PointField('z', 8, PointField.FLOAT32, 1),]
-    points=np.asarray(open3d_cloud.points)
-    cloud_data=points
-
-   
-    # create ros_cloud
-    #print(header)
-    #print(cloud_data)
+              PointField('y', 4, PointField.FLOAT32, 1),
+              PointField('z', 8, PointField.FLOAT32, 1)]
+    cloud_data = open3d_cloud.points
     return pc2.create_cloud(header, fields, cloud_data)
+
 
 def DistanceCalculator(arr):
     """ calculate distance from oroigin to points
