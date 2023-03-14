@@ -62,7 +62,7 @@ def DetectObjects(data_1,data_2):
         """
         #downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.01, max_nn=100))
         downsampled_original_np = PCDToNumpy(downsampled_original)
-        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.35, threshold=0.01, init_n=3, iterations=50)
+        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.35, threshold=0.01, init_n=3, iterations=100)
         planes = []
         boxes = []
         """find boxes for planes"""
