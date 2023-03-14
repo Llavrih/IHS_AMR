@@ -30,7 +30,7 @@ def DetectObjects(data_1,data_2):
     tic()
     def DetectObjectsOnFloor(points_PCD):
         global load
-        original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
+        original_box = DrawBoxAtPoint(0.5,1,lenght=3, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
         point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
@@ -56,7 +56,7 @@ def DetectObjects(data_1,data_2):
         """
         #downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.01, max_nn=100))
         downsampled_original_np = PCDToNumpy(downsampled_original)
-        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.4, threshold=0.01, init_n=100, iterations=30)
+        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.35, threshold=0.01, init_n=3, iterations=50)
         planes = []
         boxes = []
         """find boxes for planes"""
@@ -79,7 +79,7 @@ def DetectObjects(data_1,data_2):
         
         objects_viz = NumpyToPCD(objects)
         cl_arr = o3d.geometry.PointCloud()
-        radii = np.array([0.005 + 0.005*i for i in range(0, 5, 1)])
+        radii = np.array([0.001 + 0.005*i for i in range(0, 5, 1)])
         distance_cut = np.array([i * 0.6 for i in range(0, 5, 1)])
         for i in range(5):
             rows_to_delete = np.where(abs(objects[:, 0]) > distance_cut[i])[0]
@@ -90,12 +90,13 @@ def DetectObjects(data_1,data_2):
                 cl_arr = cl_arr + cl
         objects_viz = cl_arr
         objects_viz_np = PCDToNumpy(objects_viz)
+        # traffic_light = DetectTraffic(PCDToNumpy(objects_viz),load)
+        # TalkerTrafficLight(min(traffic_light))
 
         if np.size(objects_viz_np) != 0:
             centers_pcd, boxes_obsticles = clusteringObjects(objects_viz_np)
             if (boxes_obsticles or centers_pcd) != None:
                 #visualize_bounding_boxes(boxes_obsticles)
-
                 traffic_light = DetectTraffic(PCDToNumpy(objects_viz),load)
                 TalkerTrafficLight(min(traffic_light))
                 Talker_PCD(centers_pcd,4)
@@ -105,7 +106,7 @@ def DetectObjects(data_1,data_2):
 
     def DetectObjectsInTheAir(points_PCD):
         global load
-        original_box = DrawBoxAtPoint(0.5,1,lenght=6, r=0, g=1 , b=0.3)
+        original_box = DrawBoxAtPoint(0.5,1,lenght=5, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
         #point_original = NumpyToPCD(points)
@@ -114,15 +115,13 @@ def DetectObjects(data_1,data_2):
         #Escape room for increasing the speed.
         point_cloud = PCDToNumpy(point_original)
 
-
         rows_to_delete = np.where(point_cloud[:, 2] < 0.15)[0]
         point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
+        point_cloud_up = (DownSample((point_cloud_up),0.01))
         point_cloud_up = NumpyToPCD(point_cloud_up)
         point_cloud_up= o3d.geometry.PointCloud.random_down_sample(point_cloud_up,0.5)
-        point_cloud_up= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up,30)
+        point_cloud_up= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up,10)
         
-        point_cloud_up = (DownSample(PCDToNumpy(point_cloud_up),0.01))
-        point_cloud_up = NumpyToPCD(point_cloud_up)
         point_cloud_up.remove_statistical_outlier(nb_neighbors=5, std_ratio=0.1)
         point_cloud_up.remove_radius_outlier(nb_points=16, radius=0.1)
 
@@ -169,8 +168,8 @@ def DetectObjects(data_1,data_2):
         
         objects_viz = NumpyToPCD(objects)
 
-        cl, ind =   objects_viz.remove_radius_outlier(nb_points=20, radius=0.2)
-        objects_viz = cl
+        # cl, ind =   objects_viz.remove_radius_outlier(nb_points=20, radius=0.2)
+        # objects_viz = cl
         traffic_light = DetectTraffic(PCDToNumpy(objects_viz),load)
         TalkerTrafficLight(min(traffic_light))
         Talker_PCD(downsampled_original,2)
@@ -253,11 +252,11 @@ def visualize_bounding_boxes(boxes):
 
 def combinePCD(data_1, data_2):
     # Define a function that will run in a separate thread to process data_1
-    y_translation = 0.38
+    y_translation = 0.4
     x_translation = 0.21
     x_translation_offset = -0.00875
     z_trasnlation = -0.018
-    rotation_x = 30
+    rotation_x = 31
     rotation_y = 0
     def process_data_1(data_1):
         global points1
