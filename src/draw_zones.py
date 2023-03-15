@@ -3,6 +3,7 @@ import numpy as np
 from matplotlib.patches import Rectangle
 import matplotlib.path as mplPath   
 import math
+from matplotlib.patches import Polygon
 
 def rotate_vertices_90(vertices):
     # Define the transformation matrix
@@ -31,12 +32,25 @@ vertices_arr_right = [[[0, 0], [-1300, 0], [-1300, 640], [-1030, 1300], [770, 60
 
 # for i in range(5):
 #     rotate_vertices_90(vertices_arr_left[i])
+vertices_arr_left_post = []
+for i in range(5): 
+    vertices = vertices_arr_left[i]
+    for i in range(7):
+        vertices[i][0] -= 350
+    vertices_arr_left_post.append(vertices)
+print('Real zones left: ',np.array(vertices_arr_left_post)/ 1000)
+vertices_arr_right_post = []
+for i in range(5): 
+    vertices = vertices_arr_right[i]
+    for i in range(7):
+        vertices[i][0] += 350
+    vertices_arr_right_post.append(vertices)
+print('Real zones right: ',np.array(vertices_arr_right_post)/ 1000)
 
 for i in range(5):
     
-    vertices = vertices_arr_left[i]
-    # for i in range(5):
-    #     vertices[i][0] -= 350
+    vertices = vertices_arr_left_post[i]
+
     poly_path = mplPath.Path(np.array([vertices[0],
                                         vertices[1],
                                         vertices[2],
@@ -47,32 +61,48 @@ for i in range(5):
     point = (-1500, 500)
     x_coords, y_coords = zip(*vertices)
     
-    ax.plot(x_coords, y_coords, '-o')
-    ax.plot(point[0], point[1], '-o')
+    ax.plot(x_coords, y_coords, ',',color=(1,0,0))
     
     ax.set_aspect('equal', adjustable='box')
+    polygon = Polygon(vertices, closed=True)
+
+    # Add the polygon to the plot
+    ax.add_patch(polygon)
+
+    # Set the fill color
+    polygon.set_color((1, 0, 0,0.2))
     print(point, " is in polygon: ", poly_path.contains_point(point))
 
-# for i in range(5):
-#     vertices = vertices_arr_right[i]
-#     # for i in range(5):
-#     #     vertices[i][0] += 350
-#     poly_path = mplPath.Path(np.array([vertices[0],
-#                                         vertices[1],
-#                                         vertices[2],
-#                                         vertices[3],
-#                                         vertices[4],
-#                                         vertices[5],
-#                                         vertices[0]]))
-#     point = (-1500, 500)
-#     x_coords, y_coords = zip(*vertices)
+for i in range(5):
     
-#     ax.plot(x_coords, y_coords, '-o')
-#     ax.plot(point[0], point[1], '-o')
-#     ax.set_xlim(-3000,3000)
-#     ax.set_ylim(-1000,4000)
-#     ax.set_aspect('equal', adjustable='box')
-#     print(point, " is in polygon: ", poly_path.contains_point(point))
+    vertices = vertices_arr_right_post[i]
+
+    poly_path = mplPath.Path(np.array([vertices[0],
+                                        vertices[1],
+                                        vertices[2],
+                                        vertices[3],
+                                        vertices[4],
+                                        vertices[5],
+                                        vertices[0]]))
+    point = (-1500, 500)
+    x_coords, y_coords = zip(*vertices)
+    
+    ax.plot(x_coords, y_coords, ',',color=(0,0,1))
+    ax.plot(point[0], point[1], '.',color=(0,0,0))
+   
+    
+    ax.set_aspect('equal', adjustable='box')
+    polygon = Polygon(vertices, closed=True)
+
+    # Add the polygon to the plot
+    ax.add_patch(polygon)
+
+    # Set the fill color
+    polygon.set_color((0, 0, 1,0.2))
+    print(point, " is in polygon: ", poly_path.contains_point(point))
+plt.xlabel('x [mm]')
+plt.ylabel('y [mm]')
+plt.title(label='Varnostne cone rahlo levo in rahlo desno')
 plt.show()
     
 
