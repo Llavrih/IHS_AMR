@@ -21,6 +21,7 @@ from visualization_msgs.msg import Marker
 import random
 import threading
 import cupy as cp
+import matplotlib.path as mplPath  
 
 
 def DetectObjects(data_1,data_2):
@@ -36,7 +37,7 @@ def DetectObjects(data_1,data_2):
         global load
         global traffic_light_floor
 
-        original_box = DrawBoxAtPoint(0.5,1,lenght=3, r=0, g=1 , b=0.3)
+        original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
         point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
@@ -62,7 +63,7 @@ def DetectObjects(data_1,data_2):
         """
         #downsampled_original.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.01, max_nn=100))
         downsampled_original_np = PCDToNumpy(downsampled_original)
-        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.35, threshold=0.01, init_n=3, iterations=100)
+        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.35, threshold=0.01, init_n=3, iterations=200)
         planes = []
         boxes = []
         """find boxes for planes"""
@@ -85,14 +86,16 @@ def DetectObjects(data_1,data_2):
         
         objects_viz = NumpyToPCD(objects)
         cl_arr = o3d.geometry.PointCloud()
-        radii = np.array([0.001 + 0.005*i for i in range(0, 5, 1)])
-        distance_cut = np.array([i * 0.6 for i in range(0, 5, 1)])
+        radii = np.array([0.05 + 0.005*i for i in range(0, 5, 1)])
+        nb_points = np.array([5 + 1*i for i in range(0, 5, 1)])
+        distance_cut = np.array([i * 0.5 for i in range(0, 5, 1)])
         for i in range(5):
             rows_to_delete = np.where(abs(objects[:, 0]) > distance_cut[i])[0]
             objects_cut = np.delete(objects, rows_to_delete, axis=0)
             objects_cut = NumpyToPCD(objects_cut) 
             if not objects_cut.is_empty():
-                cl, ind =   objects_cut.remove_radius_outlier(nb_points=10, radius=radii[i])
+                #cl, ind =   objects_cut.remove_radius_outlier(nb_points=10, radius=radii[i])
+                cl, ind =   objects_cut.remove_radius_outlier(nb_points=nb_points[i], radius=radii[i])
                 cl_arr = cl_arr + cl
         objects_viz = cl_arr
         objects_viz_np = PCDToNumpy(objects_viz)
@@ -105,9 +108,12 @@ def DetectObjects(data_1,data_2):
                 #visualize_bounding_boxes(boxes_obsticles)
                 traffic_light_floor = DetectTraffic(PCDToNumpy(objects_viz),load)
                 Talker_PCD(centers_pcd,4)
+                Talker_PCD(objects_viz,1)
+        else:
+            traffic_light_floor = DetectTraffic([],load)
         
         Talker_PCD(downsampled_original,0)
-        Talker_PCD(objects_viz,1)
+        
 
     def DetectObjectsInTheAir(points_PCD):
         global load
@@ -185,15 +191,15 @@ def DetectObjects(data_1,data_2):
     try:
         
         thread1 = threading.Thread(target=DetectObjectsOnFloor, args = [points_PCD])
-        thread2 = threading.Thread(target=DetectObjectsInTheAir, args = [points_PCD])
+        #thread2 = threading.Thread(target=DetectObjectsInTheAir, args = [points_PCD])
 
         thread1.start()
-        thread2.start()
+        #thread2.start()
         
         thread1.join()
-        thread2.join()
-        TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
-        
+        #thread2.join()
+        #TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
+        TalkerTrafficLight(min(traffic_light_floor))
         toc()
 
 
@@ -201,22 +207,52 @@ def DetectObjects(data_1,data_2):
         print("Error: unable to start thread")
 
 def DetectTraffic(objects,load):
-    zone_estop = [0.3,1.6/2]
-    zone_1 = [1,1.8/2]
-    zone_2 = [1.7,2/2]
-    zone_3 = [2.5,2.2/2]
-    zone_4 = [3.2,2.4/2]
-    zone_5 = [5,2.6/2]
-    zones = [zone_estop,zone_1,zone_2,zone_3,zone_4,zone_4,zone_5]
-    object_in_zone = []
-    for obj in objects:
-        for i, zone in enumerate(zones):
-            if (abs(obj[0])<= zone[0]) & (abs(obj[1])<= zone[1]) & (abs(obj[2]) <= load):
-                #print('Objects in the air are:',obj,'in zone',i)
-                object_in_zone.append(i)
-                break
-    #print(object_in_zone)
-    return object_in_zone
+
+    if len(objects) == 0:
+        return [6]
+    else: 
+        vertices_arr_left_post = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]]
+        vertices_arr_right_post = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]]
+        vertices_arr_forward = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]]
+        object_in_zone = []
+        for obj in objects:
+
+            for i in range(6):
+                point = (obj[1],abs(obj[0]))
+                vertices = vertices_arr_forward[i]
+
+                poly_path = mplPath.Path(np.array([vertices[0],
+                                                    vertices[1],
+                                                    vertices[2],
+                                                    vertices[3],
+                                                    vertices[4],
+                                                    vertices[5],
+                                                    vertices[0]]))
+                if poly_path.contains_point(point) == True:
+                    object_in_zone.append(i)
+                    #print('point is in', point, 'zone',i)
+                    break
+        #print(object_in_zone)
+        return object_in_zone
+        
+
+# def DetectTraffic(objects,load):
+#     zone_estop = [0.3,1.6/2]
+#     zone_1 = [1,1.8/2]
+#     zone_2 = [1.7,2/2]
+#     zone_3 = [2.5,2.2/2]
+#     zone_4 = [3.2,2.4/2]
+#     zone_5 = [5,2.6/2]
+#     zones = [zone_estop,zone_1,zone_2,zone_3,zone_4,zone_4,zone_5]
+#     object_in_zone = []
+#     for obj in objects:
+#         for i, zone in enumerate(zones):
+#             if (abs(obj[0])<= zone[0]) & (abs(obj[1])<= zone[1]) & (abs(obj[2]) <= load):
+#                 #print('Objects in the air are:',obj,'in zone',i)
+#                 object_in_zone.append(i)
+#                 break
+#     #print(object_in_zone)
+#     return object_in_zone
 
 def visualize_bounding_boxes(boxes):
     marker_pub = rospy.Publisher('visualization_marker', Marker, queue_size=10)
@@ -351,10 +387,14 @@ def Talker_PCD(pointcloud,num):
         pub_clusters.publish(pc) 
 
 def TalkerTrafficLight(traffic_light):
-    if traffic_light > 1 & traffic_light < 3:
+    print('pre',traffic_light)
+    if traffic_light <= 1:
+        traffic_light = 1
+    if traffic_light > 1 and traffic_light < 3:
         traffic_light = 2
     if traffic_light >= 3:
         traffic_light = 3
+    print(traffic_light)
     pub_traffic_light.publish(traffic_light)   
 
 def clusteringObjects(objects):
