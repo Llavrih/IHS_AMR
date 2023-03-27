@@ -24,7 +24,7 @@ import cupy as cp
 import matplotlib.path as mplPath  
 
 
-def DetectObjects(data_1,data_2):
+def DetectObjects(data_1,data_2,drive_mode):
     global load
     load = 0.5
     point_original = combinePCD(data_1,data_2)
@@ -33,7 +33,7 @@ def DetectObjects(data_1,data_2):
     global traffic_light_floor
     
     
-    def DetectObjectsOnFloor(point_original):
+    def DetectObjectsOnFloor(point_original,drive_mode):
         global load
         global traffic_light_floor
         
@@ -96,16 +96,16 @@ def DetectObjects(data_1,data_2):
             centers_pcd = clusteringObjects(objects_viz_np)
             if (centers_pcd) != None:
                 #visualize_bounding_boxes(boxes_obsticles)
-                traffic_light_floor = DetectTraffic(PCDToNumpy(objects_viz),load)
+                traffic_light_floor = DetectTraffic(PCDToNumpy(objects_viz),load,drive_mode)
                 Talker_PCD(centers_pcd,4)
                 Talker_PCD(objects_viz,1)
         else:
-            traffic_light_floor = DetectTraffic([],load)
+            traffic_light_floor = DetectTraffic([],load,drive_mode)
         
         Talker_PCD(point_cloud_floor,0)
         
 
-    def DetectObjectsInTheAir(point_original):
+    def DetectObjectsInTheAir(point_original,drive_mode):
         global load
         global traffic_light_up
         traffic_light_up = []
@@ -158,7 +158,7 @@ def DetectObjects(data_1,data_2):
 
         # cl, ind =   objects_viz.remove_radius_outlier(nb_points=20, radius=0.2)
         # objects_viz = cl
-        traffic_light_up = DetectTraffic(PCDToNumpy(objects_viz),load)
+        traffic_light_up = DetectTraffic(PCDToNumpy(objects_viz),load,drive_mode)
         Talker_PCD(point_cloud_up,2)
         Talker_PCD(objects_viz,3)
 
@@ -181,23 +181,56 @@ def DetectObjects(data_1,data_2):
     except:
         print("Error: unable to start thread")
 
-def DetectTraffic(objects,load):
+def DetectTraffic(objects,load,drive_mode):
 
     if len(objects) == 0:
         return [6]
     else: 
+        # {
+        # UNDEFINED = 0,
+        # NORTH = 1,
+        # SOUTH = 2,
+        # NORTH_WEST_MILD = 3,
+        # SOUTH_WEST_MILD = 4,
+        # NORTH_WEST_SHARP = 5,
+        # SOUTH_WEST_SHARP = 6,
+        # NORTH_EAST_MILD = 7,
+        # SOUTH_EAST_MILD = 8,
+        # NORTH_EAST_SHARP = 9,
+        # SOUTH_EAST_SHARP = 10,
+        # ROTATE = 11,
+        # DOCKING = 12,
+        # STANDSTILL = 13,
+        # MANUAL = 14,
+        # SUPER_MANUAL = 15,
+        # }
         vertices_arr_left_post = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]]
         vertices_arr_right_post = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]]
         vertices_arr_forward = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]]
-        # drive_mode_zone = 
+        drive_zones = [vertices_arr_forward,
+        vertices_arr_forward,
+        vertices_arr_forward,
+        vertices_arr_right_post,
+        vertices_arr_left_post,
+        vertices_arr_right_post,
+        vertices_arr_left_post,
+        vertices_arr_left_post,
+        vertices_arr_right_post,
+        vertices_arr_left_post,
+        vertices_arr_right_post,
+        vertices_arr_forward,
+        vertices_arr_forward,
+        vertices_arr_forward,
+        vertices_arr_forward,
+        vertices_arr_forward] 
         object_in_zone = []
-        # direction_translate = [0,0,0,1,-1,1.2,-1.2,-1,1,-1.2,1.2,0,0,0,0,0]
-        # direction = direction_translate[direction]
+        
         for obj in objects:
 
             for i in range(6):
                 point = (obj[1],abs(obj[0]))
-                vertices = vertices_arr_forward[i]
+                #vertices = vertices_arr_forward[i]
+                vertices = drive_zones[drive_mode][i]
 
                 poly_path = mplPath.Path(np.array([vertices[0],
                                                     vertices[1],
@@ -652,13 +685,13 @@ def DrawResult(points,colors):
 if __name__ == '__main__':
     try:
         rospy.init_node('listener', anonymous=True)
-        #drive_mode = message_filters.Subscriber("/lizard/drive_supervisor/mode", UInt8)
+        drive_mode = message_filters.Subscriber("/drive_mode", UInt8)
         #vel = message_filters.Subscriber("/lizard/velocity_controller/cmd_vel", Twist)
         #ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
         #ts.registerCallback(DetectObjectsOnFloor)
         data_1 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         data_2 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
-        ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
+        ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2,drive_mode], 1, 1,True)
 
         ts.registerCallback(DetectObjects)
         #ts.registerCallback(DetectObjectsOnFloor)
