@@ -14,8 +14,11 @@ double degreesToRadians(double degrees);
 
 ros::Publisher pub1;
 ros::Publisher pub2;
+ros::Publisher pub;
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_left(new pcl::PointCloud<pcl::PointXYZRGB>);
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_right(new pcl::PointCloud<pcl::PointXYZRGB>);
 
-pcl::PointCloud<pcl::PointXYZRGB>::Ptr cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
+void cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 {
     ROS_INFO("+");
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr left_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -42,6 +45,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr cam1Callback(const sensor_msgs::PointClou
 
     sensor_msgs::PointCloud2 transformed_cloud_msg;
     pcl::toROSMsg(*transformed_cloud, transformed_cloud_msg);
+    pcl::copyPointCloud(*transformed_cloud, *transformed_cloud_left);
     transformed_cloud_msg.header = cloud_msg->header;
     transformed_cloud_msg.header.frame_id = "cam_link_1"; // Set parent frame
 
@@ -62,11 +66,10 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr cam1Callback(const sensor_msgs::PointClou
     br.sendTransform(transformStamped);
 
     pub1.publish(transformed_cloud_msg);
-    return transformed_cloud;
 }
 
 
-pcl::PointCloud<pcl::PointXYZRGB>::Ptr cam2Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
+void cam2Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 {
     ROS_INFO("-");
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr right_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -93,6 +96,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr cam2Callback(const sensor_msgs::PointClou
 
     sensor_msgs::PointCloud2 transformed_cloud_msg;
     pcl::toROSMsg(*transformed_cloud, transformed_cloud_msg);
+    pcl::copyPointCloud(*transformed_cloud, *transformed_cloud_right);
     transformed_cloud_msg.header = cloud_msg->header;
     transformed_cloud_msg.header.frame_id = "cam_link_1"; // Set parent frame
 
@@ -113,12 +117,13 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr cam2Callback(const sensor_msgs::PointClou
     br.sendTransform(transformStamped);
 
     pub2.publish(transformed_cloud_msg);
-    return transformed_cloud;
 }
 
 double degreesToRadians(double degrees) {
     return degrees * M_PI / 180.0;
 }
+
+
 
 int main(int argc, char** argv)
 {
@@ -133,6 +138,27 @@ int main(int argc, char** argv)
 
     pub1 = nh.advertise<sensor_msgs::PointCloud2>("transformed_cloud1", 1);
     pub2 = nh.advertise<sensor_msgs::PointCloud2>("transformed_cloud2", 1);
+    pub = nh.advertise<sensor_msgs::PointCloud2>("transformed_clouds", 1);
+
+    while (ros::ok())
+    {
+        // Access transformed_cloud_cam1 and transformed_cloud_cam2
+        if (transformed_cloud_left != nullptr && transformed_cloud_right != nullptr)
+        {
+            // Combine both point clouds
+            pcl::PointCloud<pcl::PointXYZRGB>::Ptr combined_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+            *combined_cloud = *transformed_cloud_left + *transformed_cloud_right;
+
+            // Publish the combined point cloud
+            sensor_msgs::PointCloud2 combined_cloud_msg;
+            pcl::toROSMsg(*combined_cloud, combined_cloud_msg);
+            combined_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
+
+            pub.publish(combined_cloud_msg);
+        }
+        ros::spinOnce();
+    }
+
 
     ros::spin();
 
