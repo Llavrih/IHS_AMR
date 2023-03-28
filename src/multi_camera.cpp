@@ -65,7 +65,7 @@ void cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     transformStamped.transform.rotation.w = quat.w();
     br.sendTransform(transformStamped);
 
-    pub1.publish(transformed_cloud_msg);
+    //pub1.publish(transformed_cloud_msg);
 }
 
 
@@ -116,14 +116,32 @@ void cam2Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     transformStamped.transform.rotation.w = quat.w();
     br.sendTransform(transformStamped);
 
-    pub2.publish(transformed_cloud_msg);
+    //pub2.publish(transformed_cloud_msg);
 }
 
 double degreesToRadians(double degrees) {
     return degrees * M_PI / 180.0;
 }
 
+void combineAndPublishPointClouds(pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_left,
+                                   pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_right,
+                                   ros::Publisher& pub)
+{
+    if (transformed_cloud_left != nullptr && transformed_cloud_right != nullptr)
+    {
+        // Combine both point clouds
+        ROS_INFO("message");
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr combined_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+        *combined_cloud = *transformed_cloud_left + *transformed_cloud_right;
 
+        // Publish the combined point cloud
+        sensor_msgs::PointCloud2 combined_cloud_msg;
+        pcl::toROSMsg(*combined_cloud, combined_cloud_msg);
+        combined_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
+
+        pub.publish(combined_cloud_msg);
+    }
+}
 
 int main(int argc, char** argv)
 {
@@ -135,30 +153,16 @@ int main(int argc, char** argv)
 
     // Subscribe to cam_2 point cloud topic
     ros::Subscriber cam2_sub = nh.subscribe<sensor_msgs::PointCloud2>("/cam_2/depth/color/points", 1, cam2Callback);
-
+    
     pub1 = nh.advertise<sensor_msgs::PointCloud2>("transformed_cloud1", 1);
     pub2 = nh.advertise<sensor_msgs::PointCloud2>("transformed_cloud2", 1);
     pub = nh.advertise<sensor_msgs::PointCloud2>("transformed_clouds", 1);
-
     while (ros::ok())
     {
-        // Access transformed_cloud_cam1 and transformed_cloud_cam2
-        if (transformed_cloud_left != nullptr && transformed_cloud_right != nullptr)
-        {
-            // Combine both point clouds
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr combined_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-            *combined_cloud = *transformed_cloud_left + *transformed_cloud_right;
-
-            // Publish the combined point cloud
-            sensor_msgs::PointCloud2 combined_cloud_msg;
-            pcl::toROSMsg(*combined_cloud, combined_cloud_msg);
-            combined_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
-
-            pub.publish(combined_cloud_msg);
-        }
+        combineAndPublishPointClouds(transformed_cloud_left, transformed_cloud_right, pub);
         ros::spinOnce();
     }
-
+    
 
     ros::spin();
 
