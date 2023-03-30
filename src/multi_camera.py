@@ -21,6 +21,11 @@ from visualization_msgs.msg import Marker
 import random
 import threading
 import matplotlib.path as mplPath  
+import tf2_ros
+import geometry_msgs.msg
+from geometry_msgs.msg import TransformStamped
+import tf_conversions
+
 
 
 def DetectObjects(data_1,data_2,drive_mode):
@@ -31,63 +36,62 @@ def DetectObjects(data_1,data_2,drive_mode):
     global traffic_light_floor
     
     tic()
-    def DetectObjectsOnFloor(point_original,drive_mode):
+    def DetectObjectsOnFloor(point_original, drive_mode):
         global load
         global traffic_light_floor
-        
-        #Escape room for increasing the speed.
+
+        # Escape room for increasing the speed.
         point_cloud = PCDToNumpy(point_original)
         rows_to_delete = np.where(point_cloud[:, 2] > 0.1)[0]
         point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
         point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
 
         plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.2, threshold=0.01, init_n=3, iterations=50)
-        
+
         planes = []
         boxes = []
-        
+
         """find boxes for planes"""
         for _, plane in plane_list:
             box = NumpyToPCD(plane).get_oriented_bounding_box()
             planes.append(plane)
             boxes.append(box)
         planes_np = (np.concatenate(planes, axis=0))
-        
-        index_arr_new  =[]
-        for i in range(len(index_arr)):
-            index_arr_new = index_arr_new + index_arr[i]
-        outlier =  o3d.geometry.PointCloud.select_by_index(point_cloud_floor_pcd,index_arr_new,invert=True)
 
-        outlier = PCDToNumpy(outlier)
-        mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
-        objects = outlier[mask[:,2]]
-        
+        index_arr_new = np.concatenate(index_arr, axis=0)
+        outlier = o3d.geometry.PointCloud.select_by_index(point_cloud_floor_pcd, index_arr_new, invert=True)
+        outlier_np = PCDToNumpy(outlier)
+
+        planes_mask = ~np.isin(outlier_np, planes_np).any(axis=1)
+        objects = outlier_np[planes_mask]
+
         cl_arr = o3d.geometry.PointCloud()
-        radii = np.array([0.005 + 0.005*i for i in range(0, 4, 1)])
-        nb_points = np.array([20 + 1*i for i in range(0, 4, 1)])
+        radii = np.array([0.002 + 0.002 * i for i in range(0, 4, 1)])
+        nb_points = np.array([20 + 1 * i for i in range(0, 4, 1)])
         distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
+
         for i in range(4):
-            rows_to_delete = np.where(abs(objects[:, 0]) > distance_cut[i])[0]
-            objects_cut = np.delete(objects, rows_to_delete, axis=0)
-            objects_cut = NumpyToPCD(objects_cut) 
-            if not objects_cut.is_empty():
-                #cl, ind =   objects_cut.remove_radius_outlier(nb_points=10, radius=radii[i])
-                cl, ind =   objects_cut.remove_radius_outlier(nb_points=nb_points[i], radius=radii[i])
-                cl_arr = cl_arr + cl
+            distance_mask = abs(objects[:, 0]) <= distance_cut[i]
+            objects_cut = objects[distance_mask]
+            if len(objects_cut) > 0:
+                cl = o3d.geometry.PointCloud()
+                cl.points = o3d.utility.Vector3dVector(objects_cut)
+                cl, _ = cl.remove_radius_outlier(nb_points=nb_points[i], radius=radii[i])
+                cl_arr += cl
+
         objects_viz = cl_arr
         objects_viz_np = PCDToNumpy(objects_viz)
-        
+
         if np.size(objects_viz_np) != 0:
             centers_pcd = clusteringObjects(objects_viz_np)
-            if (centers_pcd) != None:
-                #visualize_bounding_boxes(boxes_obsticles)
-                traffic_light_floor = DetectTraffic(PCDToNumpy(objects_viz),load,drive_mode)
-                Talker_PCD(centers_pcd,4)
-                Talker_PCD(objects_viz,1)
-        else:
-            traffic_light_floor = DetectTraffic([],load,drive_mode)
-        
-        Talker_PCD(point_cloud_floor_pcd,0)
+            if centers_pcd is not None:
+                traffic_light_floor = DetectTraffic(PCDToNumpy(objects_viz), load, drive_mode)
+                Talker_PCD(centers_pcd, 4)
+                Talker_PCD(objects_viz, 1)
+            else:
+                traffic_light_floor = DetectTraffic([], load, drive_mode)
+
+        Talker_PCD(point_cloud_floor_pcd, 0)
         
         
 
@@ -97,7 +101,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         global traffic_light_up
         traffic_light_up = []
         point_cloud = PCDToNumpy(point_original)
-        rows_to_delete = np.where(point_cloud[:, 2] < 0.1)[0]
+        rows_to_delete = np.where(point_cloud[:, 2] < 0.05)[0]
         point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
         point_cloud_up = (DownSample((point_cloud_up),0.01))
         point_cloud_up_pcd = NumpyToPCD(point_cloud_up)
@@ -146,7 +150,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         
         thread1.join()
         thread2.join()
-        #TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
+        TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
         #TalkerTrafficLight(min(traffic_light_floor))
         
 
@@ -265,17 +269,17 @@ def visualize_bounding_boxes(boxes):
 
 def Rx(theta):
   return np.matrix([[ 1, 0           , 0           ],
-                   [ 0, m.cos(m.radians(theta)),-m.sin(m.radians(theta))],
-                   [ 0, m.sin(m.radians(theta)), m.cos(m.radians(theta))]])
+                   [ 0, np.cos(np.deg2rad(theta)),-np.sin(np.deg2rad(theta))],
+                   [ 0, np.sin(np.deg2rad(theta)), np.cos(np.deg2rad(theta))]])
   
 def Ry(theta):
-  return np.matrix([[ m.cos(m.radians(theta)), 0, m.sin(m.radians(theta))],
+  return np.matrix([[ np.cos(np.deg2rad(theta)), 0, np.sin(np.deg2rad(theta))],
                    [ 0           , 1, 0           ],
-                   [-m.sin(m.radians(theta)), 0, m.cos(m.radians(theta))]])
+                   [-np.sin(np.deg2rad(theta)), 0, np.cos(np.deg2rad(theta))]])
   
 def Rz(theta):
-  return np.matrix([[ m.cos(m.radians(theta)), -m.sin(m.radians(theta)), 0 ],
-                   [ m.sin(m.radians(theta)), m.cos(m.radians(theta)) , 0 ],
+  return np.matrix([[ np.cos(np.deg2rad(theta)), -np.sin(np.deg2rad(theta)), 0 ],
+                   [ np.sin(np.deg2rad(theta)), np.cos(np.deg2rad(theta)) , 0 ],
                    [ 0           , 0            , 1 ]])
 
 def combinePCD(data_1, data_2):
@@ -285,33 +289,77 @@ def combinePCD(data_1, data_2):
     # bt_init = -555.8204027
     # ct_init = 386.0848065
     
-    x_translation = -0.1
-    y_translation = -679.69105659 * 0.001/2
-    z_trasnlation = 0.0
+    x_translation = 0.34
+    y_translation = -0.2
+    z_translation = 0.0
 
-    x_rot = 61.587353023478485/2
+    x_rot = 61.587353023478485/2 
     y_rot = 0
-    z_rot = 0
+    z_rot = -90
 
+    br_left = tf2_ros.TransformBroadcaster()
+    transform_stamped = TransformStamped()
+    transform_stamped.header.stamp = rospy.Time.now()
+    transform_stamped.header.frame_id = "cam_1_link"
+    transform_stamped.child_frame_id = "cam_left_link"
+    transform_stamped.transform.translation.x = -x_translation
+    transform_stamped.transform.translation.y = z_translation
+    transform_stamped.transform.translation.z = -y_translation
+
+    # Assuming you have roll, pitch, and yaw angles in radians
+    roll = np.deg2rad(-x_rot)
+    pitch = np.deg2rad(y_rot)
+    yaw = np.deg2rad(z_rot)
+    quaternion = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
+
+    transform_stamped.transform.rotation.x = quaternion[0]
+    transform_stamped.transform.rotation.y = quaternion[1]
+    transform_stamped.transform.rotation.z = quaternion[2]
+    transform_stamped.transform.rotation.w = quaternion[3]
+
+    br_left.sendTransform(transform_stamped)
+
+    br_right = tf2_ros.TransformBroadcaster()
+    transform_stamped = TransformStamped()
+    transform_stamped.header.stamp = rospy.Time.now()
+    transform_stamped.header.frame_id = "cam_1_link"
+    transform_stamped.child_frame_id = "cam_right_link"
+    transform_stamped.transform.translation.x = x_translation 
+    transform_stamped.transform.translation.y = z_translation
+    transform_stamped.transform.translation.z = -y_translation
+
+    # Assuming you have roll, pitch, and yaw angles in radians
+    roll = np.deg2rad(x_rot)
+    pitch = np.deg2rad(y_rot)
+    yaw = np.deg2rad(z_rot)
+    quaternion = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
+
+    transform_stamped.transform.rotation.x = quaternion[0]
+    transform_stamped.transform.rotation.y = quaternion[1]
+    transform_stamped.transform.rotation.z = quaternion[2]
+    transform_stamped.transform.rotation.w = quaternion[3]
+
+    br_right.sendTransform(transform_stamped)
     def process_data_1(data_1):
         global points_PCD1
         pc1 = ros_numpy.numpify(data_1)
 
         points1=np.zeros((pc1.shape[0],3))
-        translation = [x_translation,y_translation,z_trasnlation]
+        translation = [-x_translation,y_translation,z_translation]
         
-        #translation = [-x_translation+x_translation_offset, -y_translation, z_trasnlation]
-        points1[:,0]=np.subtract(pc1['x'],translation[0])
-        points1[:,1]=np.subtract(pc1['y'],translation[1])
-        points1[:,2]=np.subtract(pc1['z'],translation[2])
+        #translation = [-x_translation+x_translation_offset, -y_translation, z_translation]
+        points1[:,0]=np.add(pc1['x'],0)
+        points1[:,1]=np.add(pc1['y'],0)
+        points1[:,2]=np.add(pc1['z'],0)
         
         points1 = (np.array(points1, dtype=np.float64))
 
         
         points_PCD1 = NumpyToPCD(points1)
-        #R1 = points_PCD1.get_rotation_matrix_from_xyz((rotation1))
-        R1 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
-        points_PCD1.rotate(R1, center=(0, y_translation, 0.2))
+        points_PCD1.translate(translation)
+        R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
+        points_PCD1.rotate(R1, center=(translation))
+
         return points_PCD1
 
 
@@ -319,21 +367,21 @@ def combinePCD(data_1, data_2):
     def process_data_2(data_2):
         global points_PCD2
         pc2 = ros_numpy.numpify(data_2)
-        translation = [x_translation,-y_translation,-z_trasnlation]
+        translation = [x_translation,y_translation,z_translation]
 
         points2=np.zeros((pc2.shape[0],3))
-        points2[:,0]=np.subtract(pc2['x'],translation[0])
-        points2[:,1]=np.subtract(pc2['y'],translation[1])
-        points2[:,2]=np.subtract(pc2['z'],translation[2])
+        points2[:,0]=np.add(pc2['x'],0)
+        points2[:,1]=np.add(pc2['y'],0)
+        points2[:,2]=np.add(pc2['z'],0)
         
 
         points2 = (np.array(points2, dtype=np.float64))
         
         points_PCD2 = NumpyToPCD(points2)
+        points_PCD2.translate(translation)
 
-        #R2 = points_PCD2.get_rotation_matrix_from_xyz((rotation2))
-        R2 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
-        R2 = points_PCD2.rotate(R2, center=(0, -y_translation, 0.2))
+        R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
+        points_PCD2.rotate(R2, center=(translation))
         return points_PCD2
 
     # Start two threads to process data_1 and data_2 simultaneously
@@ -347,9 +395,9 @@ def combinePCD(data_1, data_2):
     thread_2.join()
 
     points_PCD = points_PCD1 + points_PCD2
-    points_PCD= o3d.geometry.PointCloud.random_down_sample(points_PCD,0.8)
+    points_PCD= o3d.geometry.PointCloud.random_down_sample(points_PCD,0.9)
     points_PCD= o3d.geometry.PointCloud.uniform_down_sample(points_PCD,5)
-    R = points_PCD.get_rotation_matrix_from_xyz((m.radians(0), m.radians(-75), m.radians(0)))
+    R = points_PCD.get_rotation_matrix_from_xyz((np.deg2rad(-75), np.deg2rad(0), np.deg2rad(0)))
     points_PCD.rotate(R, center=(0,0,0))
 
     original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
@@ -364,14 +412,19 @@ def Talker_PCD(pointcloud,num):
     pointcloud.is_dense = True   
     pc = pointcloud
     if num == 0:
+        pc.header.frame_id = "cam_1_link" 
         pub.publish(pc)  
     if num == 1:
+        pc.header.frame_id = "cam_1_link" 
         pub_objects.publish(pc) 
     if num == 2:
+        pc.header.frame_id = "cam_1_link" 
         pub_air.publish(pc)  
     if num == 3:
+        pc.header.frame_id = "cam_1_link" 
         pub_objects_air.publish(pc) 
     if num == 4:
+        pc.header.frame_id = "cam_1_link" 
         pub_clusters.publish(pc) 
 
 def TalkerTrafficLight(traffic_light):
@@ -386,32 +439,18 @@ def TalkerTrafficLight(traffic_light):
     pub_traffic_light.publish(traffic_light)   
 
 def clusteringObjects(objects):
-    # Perform DBSCAN clustering on the objects
     clustering = DBSCAN(eps=0.1, min_samples=3).fit(objects)
-    # Sepparate objects
-    #clustering = DBSCAN(eps=0.1, min_samples=3).fit(objects)
-    # Extract the labels for each point indicating the cluster it belongs to
     labels = clustering.labels_
-    # Identify the number of clusters and the points belonging to each cluster
+
     num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
     if num_clusters == 0:
         return None #, None
     else:
         clusters = [objects[labels == i] for i in range(num_clusters)]
-        # Compute the centers and bounding boxes of the clusters
         centers = [np.mean(cluster, axis=0) for cluster in clusters]
-        # boxes = []
-        # for cluster in clusters:
-        #     pcd = o3d.geometry.PointCloud()
-        #     pcd.points = o3d.utility.Vector3dVector(cluster)
-        #     if len(pcd.points) < 4:
-        #         return None, None
-        #     bbox = pcd.get_oriented_bounding_box()
-        #     boxes.append(bbox)
-        # # Convert the centers and bounding boxes to point cloud objects
         centers_pcd = o3d.geometry.PointCloud()
         centers_pcd.points = o3d.utility.Vector3dVector(np.stack(centers, axis=0))
-        # boxes_pcd = boxes
+
         return centers_pcd #, boxes_pcd
 
    
@@ -563,7 +602,8 @@ def NumpyToPCD(xyz):
     """
 
     pcd = o3d.geometry.PointCloud()
-    xyz = np.array(xyz, dtype = np.float64)
+    if not isinstance(xyz, np.ndarray) or xyz.dtype != np.float64:
+        xyz = np.array(xyz, dtype=np.float64)
     pcd.points = o3d.utility.Vector3dVector(xyz)
 
     return pcd
@@ -656,8 +696,8 @@ if __name__ == '__main__':
         #vel = message_filters.Subscriber("/lizard/velocity_controller/cmd_vel", Twist)
         #ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
         #ts.registerCallback(DetectObjectsOnFloor)
-        data_1 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
-        data_2 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
+        data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
+        data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         print('here')
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2,drive_mode], 1, 1,True)
 
