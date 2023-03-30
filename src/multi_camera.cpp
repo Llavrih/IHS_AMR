@@ -14,6 +14,8 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/visualization/cloud_viewer.h>
+#include <visualization_msgs/Marker.h>
+#include <pcl/common/common.h>
 
 
 double degreesToRadians(double degrees);
@@ -23,6 +25,7 @@ ros::Publisher pub_left;
 ros::Publisher pub_right;
 ros::Publisher pub;
 ros::Publisher pub_plane;
+ros::Publisher pub_bounding_box;
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_left(new pcl::PointCloud<pcl::PointXYZRGB>);
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_right(new pcl::PointCloud<pcl::PointXYZRGB>);
 
@@ -32,12 +35,18 @@ void cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr left_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::fromROSMsg(*cloud_msg, *left_cloud);
 
-        // Downsample the point cloud using a VoxelGrid filter
-    pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid;
-    voxel_grid.setInputCloud(left_cloud);
-    voxel_grid.setLeafSize(0.005f, 0.005f, 0.005f);
+    // Randomly downsample the point cloud
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-    voxel_grid.filter(*downsampled_cloud);
+    srand(time(NULL)); // Seed the random number generator
+    for (size_t i = 0; i < left_cloud->size(); ++i)
+    {
+        float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        if (r < 0.1) // Keep 10% of the points
+        {
+            downsampled_cloud->push_back(left_cloud->at(i));
+        }
+    }
+
 
     // Perform translation and rotation
     Eigen::Affine3f transform = Eigen::Affine3f::Identity();
@@ -90,13 +99,18 @@ void cam2Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr right_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::fromROSMsg(*cloud_msg, *right_cloud);
 
-    // Downsample the point cloud using a VoxelGrid filter
-    pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid;
-    voxel_grid.setInputCloud(right_cloud);
-    voxel_grid.setLeafSize(0.005f, 0.005f, 0.005f);
+    // Randomly downsample the point cloud
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-    voxel_grid.filter(*downsampled_cloud);
-    
+    srand(time(NULL)); // Seed the random number generator
+    for (size_t i = 0; i < right_cloud->size(); ++i)
+    {
+        float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        if (r < 0.1) // Keep 10% of the points
+        {
+            downsampled_cloud->push_back(right_cloud->at(i));
+        }
+    }
+
     // Perform translation and rotation
     Eigen::Affine3f transform = Eigen::Affine3f::Identity();
     transform.translation() << 0.34,-0.2, 0.0; // No translation
@@ -141,6 +155,7 @@ void cam2Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     //pub_right.publish(transformed_cloud_msg);
 }
 
+
 double degreesToRadians(double degrees) {
     return degrees * M_PI / 180.0;
 }
@@ -178,45 +193,69 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     voxel_grid.filter(*downsampled_cloud);
 
-    // Compute normals for the downsampled cloud
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr planes_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::SACSegmentationFromNormals<pcl::PointXYZRGB, pcl::Normal> seg;
+    pcl::ExtractIndices<pcl::PointXYZRGB> extract;
     pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>);
     pcl::NormalEstimation<pcl::PointXYZRGB, pcl::Normal> ne;
     ne.setSearchMethod(tree);
     ne.setInputCloud(downsampled_cloud);
-    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud<pcl::Normal>);
     ne.setKSearch(5);
+    ne.setViewPoint(0, 0, 0); // Set view point to improve plane segmentation
+    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud<pcl::Normal>);
     ne.compute(*cloud_normals);
 
-    // Create a plane segmentation object
-    pcl::SACSegmentationFromNormals<pcl::PointXYZRGB, pcl::Normal> seg;
-    seg.setOptimizeCoefficients(true);
-    seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
-    seg.setNormalDistanceWeight(0.5);
-    seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setMaxIterations(50);
-    seg.setDistanceThreshold(0.01);
-    seg.setInputCloud(downsampled_cloud);
-    seg.setInputNormals(cloud_normals);
+    for (int i = 0; i < 50; i++)
+    {
+        // Set input to segmentation object
+        seg.setInputCloud(downsampled_cloud);
+        seg.setInputNormals(cloud_normals);
 
-    // Obtain the plane inliers and coefficients
-    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-    seg.segment(*inliers, *coefficients);
+        // Set segmentation parameters
+        seg.setOptimizeCoefficients(true);
+        seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
+        seg.setNormalDistanceWeight(0.5);
+        seg.setMethodType(pcl::SAC_RANSAC);
+        seg.setMaxIterations(50);
+        seg.setDistanceThreshold(0.01);
 
-    // Extract the plane inliers from the point cloud
-    pcl::ExtractIndices<pcl::PointXYZRGB> extract;
-    extract.setInputCloud(downsampled_cloud);
-    extract.setIndices(inliers);
-    extract.setNegative(false);
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr plane_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-    extract.filter(*plane_cloud);
-    // Publish the plane cloud
-    sensor_msgs::PointCloud2 plane_cloud_msg;
-    pcl::toROSMsg(*plane_cloud, plane_cloud_msg);
-    plane_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
-    pub_plane.publish(plane_cloud_msg);
+        // Segment plane
+        pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+        seg.segment(*inliers, *coefficients);
 
+        if (inliers->indices.size() == 0) // No more planes found
+            break;
+
+        // Extract the plane inliers from the point cloud
+        extract.setInputCloud(downsampled_cloud);
+        extract.setIndices(inliers);
+        extract.setNegative(false);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr plane_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+        extract.filter(*plane_cloud);
+
+        // Add the plane inliers to the planes point cloud
+        *planes_cloud += *plane_cloud;
+
+        // Remove the plane inliers from the point cloud
+        extract.setNegative(true);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr remaining_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+        extract.filter(*remaining_cloud);
+        downsampled_cloud = remaining_cloud;
+
+        // Compute normals for the remaining cloud
+        ne.setInputCloud(downsampled_cloud);
+        ne.compute(*cloud_normals);
+    }
+
+    // Publish the planes point cloud
+    sensor_msgs::PointCloud2 planes_cloud_msg;
+    pcl::toROSMsg(*planes_cloud, planes_cloud_msg);
+    planes_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
+    pub_plane.publish(planes_cloud_msg);
 }
+
+
 
 int main(int argc, char** argv)
 {
@@ -233,6 +272,7 @@ int main(int argc, char** argv)
     pub_right = nh.advertise<sensor_msgs::PointCloud2>("transformed_cloud2", 1);
     pub = nh.advertise<sensor_msgs::PointCloud2>("transformed_clouds", 1);
     pub_plane = nh.advertise<sensor_msgs::PointCloud2>("plane", 1);
+    pub_bounding_box = nh.advertise<visualization_msgs::Marker>("plane", 1);
     while (ros::ok())
     {
         combineAndPublishPointClouds(transformed_cloud_left, transformed_cloud_right, pub);
