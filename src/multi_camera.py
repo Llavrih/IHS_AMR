@@ -25,25 +25,19 @@ import tf2_ros
 import geometry_msgs.msg
 from geometry_msgs.msg import TransformStamped
 import tf_conversions
-
+import concurrent.futures
 
 
 def DetectObjects(data_1,data_2,drive_mode):
-    global load
     load = 0.5
     point_original = combinePCD(data_1,data_2)
-    global traffic_light_up
-    global traffic_light_floor
     
-    tic()
-    def DetectObjectsOnFloor(point_original, drive_mode):
-        global load
-        global traffic_light_floor
-
+ 
+    def DetectObjectsOnFloor(point_original, drive_mode,load):
         # Escape room for increasing the speed.
         point_cloud = PCDToNumpy(point_original)
-        rows_to_delete = np.where(point_cloud[:, 2] > 0.1)[0]
-        point_cloud_floor = np.delete(point_cloud, rows_to_delete, axis=0)
+        mask = point_cloud[:, 2] <= 0.1
+        point_cloud_floor = point_cloud[mask]
         point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
 
         plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.2, threshold=0.01, init_n=3, iterations=50)
@@ -86,23 +80,25 @@ def DetectObjects(data_1,data_2,drive_mode):
             centers_pcd = clusteringObjects(objects_viz_np)
             if centers_pcd is not None:
                 traffic_light_floor = DetectTraffic(PCDToNumpy(objects_viz), load, drive_mode)
+                #TalkerTrafficLight(min(traffic_light_floor),1)
+                
                 Talker_PCD(centers_pcd, 4)
                 Talker_PCD(objects_viz, 1)
-            else:
-                traffic_light_floor = DetectTraffic([], load, drive_mode)
+        else:
+            traffic_light_floor = DetectTraffic([], load, drive_mode)
+            #TalkerTrafficLight(min(traffic_light_floor),1)
 
         Talker_PCD(point_cloud_floor_pcd, 0)
+        return traffic_light_floor
+        
         
         
 
-    def DetectObjectsInTheAir(point_original,drive_mode):
-
-        global load
-        global traffic_light_up
+    def DetectObjectsInTheAir(point_original,drive_mode,load):
         traffic_light_up = []
         point_cloud = PCDToNumpy(point_original)
-        rows_to_delete = np.where(point_cloud[:, 2] < 0.05)[0]
-        point_cloud_up = np.delete(point_cloud, rows_to_delete, axis=0)
+        mask = point_cloud[:, 2] >= 0.1
+        point_cloud_up = point_cloud[mask]
         point_cloud_up = (DownSample((point_cloud_up),0.01))
         point_cloud_up_pcd = NumpyToPCD(point_cloud_up)
         point_cloud_up_pcd= o3d.geometry.PointCloud.random_down_sample(point_cloud_up_pcd,0.5)
@@ -138,32 +134,34 @@ def DetectObjects(data_1,data_2,drive_mode):
         traffic_light_up = DetectTraffic(PCDToNumpy(objects_viz),load,drive_mode)
         Talker_PCD(point_cloud_up_pcd,2)
         Talker_PCD(objects_viz,3)
+        #TalkerTrafficLight(min(traffic_light_up),0)
+        return traffic_light_up
 
     
     try:
-        
-        thread1 = threading.Thread(target=DetectObjectsOnFloor, args = [point_original,drive_mode])
-        thread2 = threading.Thread(target=DetectObjectsInTheAir, args = [point_original,drive_mode])
+        print('Start', time.time())
 
-        thread1.start()
-        thread2.start()
-        
-        thread1.join()
-        thread2.join()
-        TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
-        #TalkerTrafficLight(min(traffic_light_floor))
-        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future1 = executor.submit(DetectObjectsOnFloor, point_original, drive_mode, load)
+            future2 = executor.submit(DetectObjectsInTheAir, point_original, drive_mode, load)
 
+            traffic_light_floor = future1.result()
+            traffic_light_up = future2.result()
+            TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
 
-    except:
+        print('Stop', time.time())
+
+    except Exception as e:
         print("Error: unable to start thread")
+        print(e)
 
-    toc()
+
+
 
 def DetectTraffic(objects,load,drive_mode):
     drive_mode = np.array(drive_mode.data)
-    print(drive_mode)
     if len(objects) == 0:
+        print('Return 6.')
         return [6]
     else: 
         # {
@@ -428,15 +426,8 @@ def Talker_PCD(pointcloud,num):
         pub_clusters.publish(pc) 
 
 def TalkerTrafficLight(traffic_light):
-    # print('pre',traffic_light)
-    # if traffic_light <= 1:
-    #     traffic_light = 1
-    # if traffic_light > 1 and traffic_light < 3:
-    #     traffic_light = 2
-    # if traffic_light >= 3:
-    #     traffic_light = 3
-    print(traffic_light)
-    pub_traffic_light.publish(traffic_light)   
+    pub_traffic_light.publish(traffic_light)  
+
 
 def clusteringObjects(objects):
     clustering = DBSCAN(eps=0.1, min_samples=3).fit(objects)
@@ -644,8 +635,8 @@ def PlaneRegression(points, threshold, init_n, iter):
 
     pcd = NumpyToPCD(points)
     pcd= pcd.voxel_down_sample(voxel_size=0.05)
-    pcd= o3d.geometry.PointCloud.random_down_sample(pcd,0.9)
-    pcd= o3d.geometry.PointCloud.uniform_down_sample(pcd,100)
+    pcd= o3d.geometry.PointCloud.random_down_sample(pcd,0.5)
+    pcd= o3d.geometry.PointCloud.uniform_down_sample(pcd,200)
 
     pcd.points = o3d.utility.Vector3dVector(points)
 
@@ -693,12 +684,10 @@ if __name__ == '__main__':
     try:
         rospy.init_node('listener', anonymous=True)
         drive_mode = message_filters.Subscriber("/drive_mode", UInt8)
-        #vel = message_filters.Subscriber("/lizard/velocity_controller/cmd_vel", Twist)
-        #ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], 1, 1,True)
-        #ts.registerCallback(DetectObjectsOnFloor)
         data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         print('here')
+
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2,drive_mode], 1, 1,True)
 
         ts.registerCallback(DetectObjects)
