@@ -48,7 +48,7 @@ def DetectObjects(data_1,data_2,drive_mode):
 
         planes = []
         boxes = []
-
+        
         """find boxes for planes"""
         for _, plane in plane_list:
             box = NumpyToPCD(plane).get_oriented_bounding_box()
@@ -89,7 +89,7 @@ def DetectObjects(data_1,data_2,drive_mode):
                 Talker_PCD(centers_pcd, 4)
                 Talker_PCD(objects_viz, 1)
         else:
-            traffic_light_floor = DetectTraffic([], load, drive_mode)
+            traffic_light_floor = [6]
             #TalkerTrafficLight(min(traffic_light_floor),1)
 
         Talker_PCD(point_cloud_floor_pcd, 0)
@@ -143,7 +143,7 @@ def DetectObjects(data_1,data_2,drive_mode):
 
     
     try:
-        print('Start', time.time())
+        # print('Start', time.time())
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future1 = executor.submit(DetectObjectsOnFloor, point_original, drive_mode, load)
@@ -153,7 +153,7 @@ def DetectObjects(data_1,data_2,drive_mode):
             traffic_light_up = future2.result()
             TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
 
-        print('Stop', time.time())
+        # print('Stop', time.time())
 
     except Exception as e:
         print("Error: unable to start thread")
@@ -165,7 +165,6 @@ def DetectObjects(data_1,data_2,drive_mode):
 def DetectTraffic(objects,load,drive_mode):
     drive_mode = np.array(drive_mode.data)
     if len(objects) == 0:
-        print('Return 6.')
         return [6]
     else: 
         # {
@@ -430,6 +429,7 @@ def Talker_PCD(pointcloud,num):
         pub_clusters.publish(pc) 
 
 def TalkerTrafficLight(traffic_light):
+    print('Traffic light: {}'.format(traffic_light))
     pub_traffic_light.publish(traffic_light)  
 
 
@@ -700,7 +700,7 @@ if __name__ == '__main__':
         drive_mode = message_filters.Subscriber("/drive_mode", UInt8)
         data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
-
+        print("Started the program.")
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2, drive_mode], 1, 1, True)
 
         ts.registerCallback(DetectObjects)
