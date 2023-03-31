@@ -8,7 +8,6 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <cmath>
-#include <pcl/point_types.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/segmentation/sac_segmentation.h>
@@ -19,7 +18,11 @@
 #include <pcl/filters/crop_box.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/surface/mls.h> 
-
+#include <pcl/point_cloud.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/features/normal_3d_omp.h> // Include for OpenMP parallelization
+#include <pcl/search/kdtree.h>
+#include <pcl/search/flann_search.h> // Include for FLANN search
 
 double degreesToRadians(double degrees);
 void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud);
@@ -215,8 +218,13 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr planes_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::SACSegmentationFromNormals<pcl::PointXYZRGB, pcl::Normal> seg;
     pcl::ExtractIndices<pcl::PointXYZRGB> extract;
+
+    // Change the search method to pcl::search::flann::KdTree with epsilon for approximate search
     pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>);
-    pcl::NormalEstimation<pcl::PointXYZRGB, pcl::Normal> ne;
+    tree->setEpsilon(0.01); // Set epsilon for approximate search
+
+    // Change normal estimation to use OpenMP parallelization and pcl::search::flann::KdTree search method
+    pcl::NormalEstimationOMP<pcl::PointXYZRGB, pcl::Normal> ne;
     ne.setSearchMethod(tree);
     ne.setInputCloud(downsampled_cloud);
     ne.setKSearch(50);
