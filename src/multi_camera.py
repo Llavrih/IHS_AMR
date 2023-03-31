@@ -35,12 +35,16 @@ def DetectObjects(data_1,data_2,drive_mode):
  
     def DetectObjectsOnFloor(point_original, drive_mode,load):
         # Escape room for increasing the speed.
+        original_box = DrawBoxAtPoint(0.5,1,lenght=3, r=0, g=1 , b=0.3)
+        original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
+        origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
+        point_original = o3d.geometry.PointCloud.crop(point_original,original_box_PCD)
         point_cloud = PCDToNumpy(point_original)
         mask = point_cloud[:, 2] <= 0.1
         point_cloud_floor = point_cloud[mask]
         point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
 
-        plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.2, threshold=0.01, init_n=3, iterations=50)
+        plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.1, threshold=0.01, init_n=3, iterations=50)
 
         planes = []
         boxes = []
@@ -60,8 +64,8 @@ def DetectObjects(data_1,data_2,drive_mode):
         objects = outlier_np[planes_mask]
 
         cl_arr = o3d.geometry.PointCloud()
-        radii = np.array([0.002 + 0.002 * i for i in range(0, 4, 1)])
-        nb_points = np.array([20 + 1 * i for i in range(0, 4, 1)])
+        radii = np.array([0.005 + 0.002 * i for i in range(0, 4, 1)])
+        nb_points = np.array([10 + 1 * i for i in range(0, 4, 1)])
         distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
 
         for i in range(4):
@@ -683,24 +687,36 @@ def DrawResult(points,colors):
 if __name__ == '__main__':
     try:
         rospy.init_node('listener', anonymous=True)
+
+        print("Waiting for /drive_mode topic...")
+        drive_mode_msg = rospy.wait_for_message("/drive_mode", UInt8)
+
+        print("Waiting for /cam_1/depth/color/points topic...")
+        data_1_msg = rospy.wait_for_message("/cam_1/depth/color/points", PointCloud2)
+
+        print("Waiting for /cam_2/depth/color/points topic...")
+        data_2_msg = rospy.wait_for_message("/cam_2/depth/color/points", PointCloud2)
+
         drive_mode = message_filters.Subscriber("/drive_mode", UInt8)
         data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
-        print('here')
 
-        ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2,drive_mode], 1, 1,True)
+        ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2, drive_mode], 1, 1, True)
 
         ts.registerCallback(DetectObjects)
         #ts.registerCallback(DetectObjectsOnFloor)
         #ts.registerCallback(DetectObjectsInTheAir)
-            
+
         pub = rospy.Publisher('/pointcloud', PointCloud2, queue_size=10)
         pub_objects = rospy.Publisher('/pointcloud_objects', PointCloud2, queue_size=10)
         pub_air = rospy.Publisher('/pointcloud_air', PointCloud2, queue_size=10)
         pub_objects_air = rospy.Publisher('/pointcloud_objects_air', PointCloud2, queue_size=10)
         pub_clusters = rospy.Publisher('/pointcloud_clusters', PointCloud2, queue_size=10)
         pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
+
         rospy.spin()
-        
+
     except rospy.ROSInterruptException:
         pass
+
+
