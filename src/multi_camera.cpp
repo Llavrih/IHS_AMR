@@ -17,8 +17,8 @@
 #include <visualization_msgs/Marker.h>
 #include <pcl/common/common.h>
 #include <pcl/filters/crop_box.h>
-
-
+#include <pcl/filters/radius_outlier_removal.h>
+#include <pcl/surface/mls.h> 
 
 
 double degreesToRadians(double degrees);
@@ -168,7 +168,7 @@ void combineAndPublishPointClouds(pcl::PointCloud<pcl::PointXYZRGB>::Ptr transfo
                                    pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_right,
                                    ros::Publisher& pub)
 {
-    if (transformed_cloud_left != nullptr && transformed_cloud_right != nullptr)
+    if (!transformed_cloud_left->empty() && !transformed_cloud_right->empty())
     {
         // Combine both point clouds
         ROS_INFO("message");
@@ -176,15 +176,30 @@ void combineAndPublishPointClouds(pcl::PointCloud<pcl::PointXYZRGB>::Ptr transfo
         *combined_cloud = *transformed_cloud_left + *transformed_cloud_right;
         ROS_INFO("Combined point cloud size: %lu", combined_cloud->size());
 
-        // Publish the combined point cloud
-        sensor_msgs::PointCloud2 combined_cloud_msg;
-        pcl::toROSMsg(*combined_cloud, combined_cloud_msg);
-        combined_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
-        if (combined_cloud->size() != 0)
-            planeSegmentation(*combined_cloud);
-        pub.publish(combined_cloud_msg);
+        // Apply MLS smoothing
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_smoothed(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::MovingLeastSquares<pcl::PointXYZRGB, pcl::PointXYZRGB> mls;
+        mls.setInputCloud(combined_cloud);
+        mls.setSearchRadius(0.03);
+        mls.setPolynomialOrder(2);
+        mls.process(*cloud_smoothed);
+
+        // Apply transform to the smoothed combined point cloud
+        Eigen::Affine3f transform = Eigen::Affine3f::Identity();
+        transform.rotate (Eigen::AngleAxisf (-75.0f * M_PI / 180.0f, Eigen::Vector3f::UnitX()));
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::transformPointCloud (*cloud_smoothed, *transformed_cloud, transform);
+
+        // Publish the transformed point cloud
+        sensor_msgs::PointCloud2 transformed_cloud_msg;
+        pcl::toROSMsg(*transformed_cloud, transformed_cloud_msg);
+        transformed_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
+        if (transformed_cloud->size() != 0)
+            planeSegmentation(*transformed_cloud);
+        pub.publish(transformed_cloud_msg);
     }
 }
+
 
 void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
 {
@@ -193,7 +208,7 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     // Downsample the point cloud using a VoxelGrid filter
     pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid;
     voxel_grid.setInputCloud(combined_cloud.makeShared());
-    voxel_grid.setLeafSize(0.01f, 0.01f, 0.01f);
+    voxel_grid.setLeafSize(0.02f, 0.02f, 0.02f);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     voxel_grid.filter(*downsampled_cloud);
 
@@ -228,9 +243,9 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
         // Set segmentation parameters
         seg.setOptimizeCoefficients(true);
         seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
-        seg.setNormalDistanceWeight(0.05);
+        seg.setNormalDistanceWeight(0.4);
         seg.setMethodType(pcl::SAC_RANSAC);
-        seg.setMaxIterations(50);
+        seg.setMaxIterations(100);
         seg.setDistanceThreshold(0.01);
 
         // Segment plane
@@ -312,6 +327,17 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     // Assign the cropped_cloud to the outlier_cloud
     outlier_cloud = cropped_cloud;
 
+    // Apply Radius Outlier Removal filter
+    pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> outlier_removal;
+    outlier_removal.setInputCloud(outlier_cloud);
+    outlier_removal.setRadiusSearch(0.05);
+    outlier_removal.setMinNeighborsInRadius(10);
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_outlier_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+    outlier_removal.filter(*filtered_outlier_cloud);
+
+    // Assign the filtered_outlier_cloud to the outlier_cloud
+    outlier_cloud = filtered_outlier_cloud;
+
     // Publish the outlier point cloud
     sensor_msgs::PointCloud2 outlier_cloud_msg;
     pcl::toROSMsg(*outlier_cloud, outlier_cloud_msg);
@@ -337,6 +363,7 @@ int main(int argc, char** argv)
     pub = nh.advertise<sensor_msgs::PointCloud2>("transformed_clouds", 1);
     pub_plane = nh.advertise<sensor_msgs::PointCloud2>("plane", 1);
     pub_outliers = nh.advertise<sensor_msgs::PointCloud2>("outlier_points", 1);
+    
 
     while (ros::ok())
     {
