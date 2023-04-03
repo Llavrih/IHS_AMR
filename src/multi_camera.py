@@ -34,6 +34,8 @@ def DetectObjects(data_1,data_2,drive_mode):
     
  
     def DetectObjectsOnFloor(point_original, drive_mode,load):
+        time_0 = time.time()
+        print('1: {}'.format(time_0))
         # Escape room for increasing the speed.
         original_box = DrawBoxAtPoint(0.5,1,lenght=3, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
@@ -43,19 +45,20 @@ def DetectObjects(data_1,data_2,drive_mode):
         mask = point_cloud[:, 2] <= 0.1
         point_cloud_floor = point_cloud[mask]
         point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
-
-        plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.1, threshold=0.01, init_n=3, iterations=50)
-
+        #print('1: {}'.format(time.time()))
+        print('1.1: {}'.format(time.time()-time_0))
+        plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.05, threshold=0.01, init_n=3, iterations=100)
+        print('2: {}'.format(time.time()-time_0))
         planes = []
         boxes = []
-        
+        print('3: {}'.format(time.time()-time_0))
         """find boxes for planes"""
         for _, plane in plane_list:
             box = NumpyToPCD(plane).get_oriented_bounding_box()
             planes.append(plane)
             boxes.append(box)
         planes_np = (np.concatenate(planes, axis=0))
-
+        print('4: {}'.format(time.time()-time_0))
         index_arr_new = np.concatenate(index_arr, axis=0)
         outlier = o3d.geometry.PointCloud.select_by_index(point_cloud_floor_pcd, index_arr_new, invert=True)
         outlier_np = PCDToNumpy(outlier)
@@ -64,10 +67,10 @@ def DetectObjects(data_1,data_2,drive_mode):
         objects = outlier_np[planes_mask]
 
         cl_arr = o3d.geometry.PointCloud()
-        radii = np.array([0.005 + 0.002 * i for i in range(0, 4, 1)])
+        radii = np.array([0.002 + 0.002 * i for i in range(0, 4, 1)])
         nb_points = np.array([10 + 1 * i for i in range(0, 4, 1)])
         distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
-
+        print('5: {}'.format(time.time()-time_0))
         for i in range(4):
             distance_mask = abs(objects[:, 0]) <= distance_cut[i]
             objects_cut = objects[distance_mask]
@@ -76,14 +79,15 @@ def DetectObjects(data_1,data_2,drive_mode):
                 cl.points = o3d.utility.Vector3dVector(objects_cut)
                 cl, _ = cl.remove_radius_outlier(nb_points=nb_points[i], radius=radii[i])
                 cl_arr += cl
-
+        print('6: {}'.format(time.time()-time_0))
         objects_viz = cl_arr
         objects_viz_np = PCDToNumpy(objects_viz)
 
         if np.size(objects_viz_np) != 0:
             centers_pcd = clusteringObjects(objects_viz_np)
             if centers_pcd is not None:
-                traffic_light_floor = DetectTraffic(PCDToNumpy(objects_viz), load, drive_mode)
+                print(centers_pcd)
+                traffic_light_floor = DetectTraffic(PCDToNumpy(centers_pcd), load, drive_mode)
                 #TalkerTrafficLight(min(traffic_light_floor),1)
                 
                 Talker_PCD(centers_pcd, 4)
@@ -93,12 +97,14 @@ def DetectObjects(data_1,data_2,drive_mode):
             #TalkerTrafficLight(min(traffic_light_floor),1)
 
         Talker_PCD(point_cloud_floor_pcd, 0)
+        print('7: {}'.format(time.time()-time_0))
         return traffic_light_floor
         
         
         
 
     def DetectObjectsInTheAir(point_original,drive_mode,load):
+    
         traffic_light_up = []
         point_cloud = PCDToNumpy(point_original)
         mask = point_cloud[:, 2] >= 0.1
@@ -160,72 +166,44 @@ def DetectObjects(data_1,data_2,drive_mode):
         print(e)
 
 
+def is_point_inside_polygon(x, y, polygon):
+    n = len(polygon)
+    inside = False
+
+    p1x, p1y = polygon[0]
+    for i in range(n + 1):
+        p2x, p2y = polygon[i % n]
+        if y > min(p1y, p2y):
+            if y <= max(p1y, p2y):
+                if x <= max(p1x, p2x):
+                    if p1y != p2y:
+                        x_intersection = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or x <= x_intersection:
+                        inside = not inside
+        p1x, p1y = p2x, p2y
+
+    return inside
 
 
+
+
+
+global drive_zones
+drive_zones = np.array([[[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]]])
+        
 def DetectTraffic(objects,load,drive_mode):
+    global drive_zones
     drive_mode = np.array(drive_mode.data)
     if len(objects) == 0:
         return [6]
     else: 
-        # {
-        # UNDEFINED = 0,
-        # NORTH = 1,
-        # SOUTH = 2,
-        # NORTH_WEST_MILD = 3,
-        # SOUTH_WEST_MILD = 4,
-        # NORTH_WEST_SHARP = 5,
-        # SOUTH_WEST_SHARP = 6,
-        # NORTH_EAST_MILD = 7,
-        # SOUTH_EAST_MILD = 8,
-        # NORTH_EAST_SHARP = 9,
-        # SOUTH_EAST_SHARP = 10,
-        # ROTATE = 11,
-        # DOCKING = 12,
-        # STANDSTILL = 13,
-        # MANUAL = 14,
-        # SUPER_MANUAL = 15,
-        # }
-        vertices_arr_left_post = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]]
-        vertices_arr_right_post = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]]
-        vertices_arr_forward = [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]]
-        drive_zones = [vertices_arr_forward,
-        vertices_arr_forward,
-        vertices_arr_forward,
-        vertices_arr_right_post,
-        vertices_arr_left_post,
-        vertices_arr_right_post,
-        vertices_arr_left_post,
-        vertices_arr_left_post,
-        vertices_arr_right_post,
-        vertices_arr_left_post,
-        vertices_arr_right_post,
-        vertices_arr_forward,
-        vertices_arr_forward,
-        vertices_arr_forward,
-        vertices_arr_forward,
-        vertices_arr_forward] 
-        object_in_zone = []
-        
+        object_in_zone = []    
         for obj in objects:
-
             for i in range(6):
-                point = (obj[1],abs(obj[0]))
-                #vertices = vertices_arr_forward[i]
-                vertices = drive_zones[drive_mode][i]
-
-                poly_path = mplPath.Path(np.array([vertices[0],
-                                                    vertices[1],
-                                                    vertices[2],
-                                                    vertices[3],
-                                                    vertices[4],
-                                                    vertices[5],
-                                                    vertices[0]]))
-                if poly_path.contains_point(point) == True:
+                if is_point_inside_polygon(obj[1],abs(obj[0]),drive_zones[drive_mode][i]) == True:
                     object_in_zone.append(i)
-                    #print('point is in', point, 'zone',i)
-                    break
-        #print(object_in_zone)
-        return object_in_zone
+                if len(object_in_zone) != 0:
+                    return object_in_zone
         
 
 def visualize_bounding_boxes(boxes):
@@ -430,6 +408,7 @@ def Talker_PCD(pointcloud,num):
 
 def TalkerTrafficLight(traffic_light):
     print('Traffic light: {}'.format(traffic_light))
+    print('Time: {}'.format(time.time()))
     pub_traffic_light.publish(traffic_light)  
 
 
@@ -638,11 +617,7 @@ def PlaneRegression(points, threshold, init_n, iter):
     """
 
     pcd = NumpyToPCD(points)
-    pcd= pcd.voxel_down_sample(voxel_size=0.05)
-    pcd= o3d.geometry.PointCloud.random_down_sample(pcd,0.5)
-    pcd= o3d.geometry.PointCloud.uniform_down_sample(pcd,200)
-
-    pcd.points = o3d.utility.Vector3dVector(points)
+    pcd.points = o3d.utility.Vector3dVector(points) 
 
     _, inliers = pcd.segment_plane(distance_threshold=threshold,
                                    ransac_n=init_n,
@@ -650,31 +625,25 @@ def PlaneRegression(points, threshold, init_n, iter):
 
     inlier_points = np.asarray(pcd.select_by_index(inliers).points)
 
-    A = np.c_[inlier_points[:, 0], inlier_points[:, 1], np.ones_like(inlier_points[:, 0])]
+    A = np.vstack((inlier_points[:, :2].T, np.ones(len(inlier_points)))).T
     w = np.linalg.lstsq(A, inlier_points[:, 2], rcond=None)[0]
+
     
     return w, inliers
 
 def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
-    """ Detect multiple planes from given point clouds
-    Args:
-        points (np.ndarray):
-        min_ratio (float, optional): The minimum left points ratio to end the Detection. Defaults to 0.05.
-        threshold (float, optional): RANSAC threshold in (m). Defaults to 0.01.
-    Returns:
-        [List[tuple(np.ndarray, List)]]: Plane equation and plane point index
-    """
-
     plane_list = []
     N = len(points)
     points_copy = points.copy()
     index_arr = []
 
-    while len(points_copy) > min_ratio * N:
-        w, index = PlaneRegression(points_copy, threshold=threshold, init_n=init_n, iter=iterations)
-        plane_list.append((w, points_copy[index]))
-        points_copy = np.delete(points_copy, index, axis=0)
-        index_arr.append(index)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        while len(points_copy) > min_ratio * N:
+            future = executor.submit(PlaneRegression, points_copy, threshold=threshold, init_n=init_n, iter=iterations)
+            w, index = future.result()
+            plane_list.append((w, points_copy[index]))
+            points_copy = np.delete(points_copy, index, axis=0)
+            index_arr.append(index)
 
     return plane_list, index_arr
 
