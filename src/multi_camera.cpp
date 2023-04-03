@@ -24,6 +24,13 @@
 #include <pcl/search/kdtree.h>
 #include <pcl/search/flann_search.h> // Include for FLANN search
 #include <pcl/filters/passthrough.h>
+#include <omp.h>
+#include <future>
+#include <utility> // for std::move()
+#include <chrono>
+#include <ctime>
+#include <iostream>
+
 
 double degreesToRadians(double degrees);
 void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud);
@@ -41,7 +48,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr passThroughFilter(pcl::PointCloud<pcl::Po
 
 void cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 {
-    ROS_INFO("+");
+
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr left_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::fromROSMsg(*cloud_msg, *left_cloud);
 
@@ -51,7 +58,7 @@ void cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     for (size_t i = 0; i < left_cloud->size(); ++i)
     {
         float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        if (r < 0.1) // Keep 10% of the points
+        if (r < 0.05) // Keep 10% of the points
         {
             downsampled_cloud->push_back(left_cloud->at(i));
         }
@@ -105,7 +112,6 @@ void cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 
 void cam2Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 {
-    ROS_INFO("-");
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr right_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::fromROSMsg(*cloud_msg, *right_cloud);
 
@@ -115,7 +121,7 @@ void cam2Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     for (size_t i = 0; i < right_cloud->size(); ++i)
     {
         float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        if (r < 0.1) // Keep 10% of the points
+        if (r < 0.05) // Keep 10% of the points
         {
             downsampled_cloud->push_back(right_cloud->at(i));
         }
@@ -177,10 +183,10 @@ void combineAndPublishPointClouds(pcl::PointCloud<pcl::PointXYZRGB>::Ptr transfo
     if (!transformed_cloud_left->empty() && !transformed_cloud_right->empty())
     {
         // Combine both point clouds
-        ROS_INFO("message");
+
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr combined_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
         *combined_cloud = *transformed_cloud_left + *transformed_cloud_right;
-        ROS_INFO("Combined point cloud size: %lu", combined_cloud->size());
+
 
         // Apply MLS smoothing
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_smoothed(new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -223,7 +229,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr passThroughFilter(pcl::PointCloud<pcl::Po
     pcl::PassThrough<pcl::PointXYZRGB> passY;
     passY.setInputCloud(filtered_cloud);
     passY.setFilterFieldName("y");
-    passY.setFilterLimits(-4.0, 4.0);
+    passY.setFilterLimits(-3.0, 3.0);
     passY.filter(*filtered_cloud);
     
     return filtered_cloud;
@@ -233,7 +239,6 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr passThroughFilter(pcl::PointCloud<pcl::Po
 
 void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
 {
-    std::cout << "Input point cloud size: " << combined_cloud.size() << std::endl;
 
     // Downsample the point cloud using a VoxelGrid filter
     pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid;
@@ -268,7 +273,7 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     outlier_cloud->reserve(combined_cloud.size());
     remaining_cloud->reserve(combined_cloud.size());
 
-
+    #pragma omp parallel for
     for (int i = 0; i < 10; i++)
     {
         // Set input to segmentation object
@@ -278,9 +283,9 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
         // Set segmentation parameters
         seg.setOptimizeCoefficients(true);
         seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
-        seg.setNormalDistanceWeight(0.7);
+        seg.setNormalDistanceWeight(0.3);
         seg.setMethodType(pcl::SAC_RANSAC);
-        seg.setMaxIterations(50);
+        seg.setMaxIterations(10);
         seg.setDistanceThreshold(0.01);
 
         // Segment plane
@@ -366,7 +371,7 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> outlier_removal;
     outlier_removal.setInputCloud(outlier_cloud);
     outlier_removal.setRadiusSearch(0.02);
-    outlier_removal.setMinNeighborsInRadius(20);
+    outlier_removal.setMinNeighborsInRadius(10);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_outlier_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     outlier_removal.filter(*filtered_outlier_cloud);
 
@@ -378,8 +383,21 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     pcl::toROSMsg(*outlier_cloud, outlier_cloud_msg);
     outlier_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
     pub_outliers.publish(outlier_cloud_msg);
+    auto now = std::chrono::system_clock::now();
+    auto milliseconds_since_epoch = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    std::cout << "Unix time: " << milliseconds_since_epoch.count() << " milliseconds since epoch" << std::endl;
 
 } 
+
+void cam1CallbackWrapper(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
+{
+    cam1Callback(cloud_msg);
+}
+
+void cam2CallbackWrapper(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
+{
+    cam2Callback(cloud_msg);
+}
 
 
 int main(int argc, char** argv)
@@ -387,11 +405,9 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "point_cloud_subscriber");
     ros::NodeHandle nh;
 
-    // Subscribe to cam_1 point cloud topic
-    ros::Subscriber cam1_sub = nh.subscribe<sensor_msgs::PointCloud2>("/cam_1/depth/color/points", 1, cam1Callback);
+    ros::Subscriber cam1_sub = nh.subscribe<sensor_msgs::PointCloud2>("/cam_1/depth/color/points", 1, cam1CallbackWrapper);
+    ros::Subscriber cam2_sub = nh.subscribe<sensor_msgs::PointCloud2>("/cam_2/depth/color/points", 1, cam2CallbackWrapper);
 
-    // Subscribe to cam_2 point cloud topic
-    ros::Subscriber cam2_sub = nh.subscribe<sensor_msgs::PointCloud2>("/cam_2/depth/color/points", 1, cam2Callback);
     
     pub_left = nh.advertise<sensor_msgs::PointCloud2>("transformed_cloud1", 1);
     pub_right = nh.advertise<sensor_msgs::PointCloud2>("transformed_cloud2", 1);
@@ -402,7 +418,16 @@ int main(int argc, char** argv)
 
     while (ros::ok())
     {
-        combineAndPublishPointClouds(transformed_cloud_left, transformed_cloud_right, pub);
+        std::future<void> cam1_future = std::async(std::launch::async, [&]() {
+            combineAndPublishPointClouds(transformed_cloud_left, transformed_cloud_right, pub);
+        });
+        std::future<void> cam2_future = std::async(std::launch::async, [&]() {
+            combineAndPublishPointClouds(transformed_cloud_left, transformed_cloud_right, pub);
+        });
+
+        cam1_future.wait();
+        cam2_future.wait();
+
         ros::spinOnce();
     }
     
