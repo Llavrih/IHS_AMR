@@ -23,6 +23,7 @@
 #include <pcl/features/normal_3d_omp.h> // Include for OpenMP parallelization
 #include <pcl/search/kdtree.h>
 #include <pcl/search/flann_search.h> // Include for FLANN search
+#include <pcl/filters/passthrough.h>
 
 double degreesToRadians(double degrees);
 void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud);
@@ -35,6 +36,8 @@ ros::Publisher pub_bounding_box;
 ros::Publisher pub_outliers;
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_left(new pcl::PointCloud<pcl::PointXYZRGB>);
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_right(new pcl::PointCloud<pcl::PointXYZRGB>);
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr passThroughFilter(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud);
 
 void cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 {
@@ -48,7 +51,7 @@ void cam1Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     for (size_t i = 0; i < left_cloud->size(); ++i)
     {
         float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        if (r < 0.01) // Keep 10% of the points
+        if (r < 0.1) // Keep 10% of the points
         {
             downsampled_cloud->push_back(left_cloud->at(i));
         }
@@ -112,7 +115,7 @@ void cam2Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
     for (size_t i = 0; i < right_cloud->size(); ++i)
     {
         float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        if (r < 0.01) // Keep 10% of the points
+        if (r < 0.1) // Keep 10% of the points
         {
             downsampled_cloud->push_back(right_cloud->at(i));
         }
@@ -193,15 +196,39 @@ void combineAndPublishPointClouds(pcl::PointCloud<pcl::PointXYZRGB>::Ptr transfo
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
         pcl::transformPointCloud (*cloud_smoothed, *transformed_cloud, transform);
 
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud = passThroughFilter(transformed_cloud);
         // Publish the transformed point cloud
         sensor_msgs::PointCloud2 transformed_cloud_msg;
-        pcl::toROSMsg(*transformed_cloud, transformed_cloud_msg);
+        pcl::toROSMsg(*filtered_cloud, transformed_cloud_msg);
         transformed_cloud_msg.header.frame_id = "cam_link_1"; // Set frame
-        if (transformed_cloud->size() != 0)
-            planeSegmentation(*transformed_cloud);
+        if (filtered_cloud->size() != 0)
+            
+            planeSegmentation(*filtered_cloud);
         pub.publish(transformed_cloud_msg);
     }
 }
+
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr passThroughFilter(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud)
+{
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+    
+    // Filter in z direction
+    pcl::PassThrough<pcl::PointXYZRGB> passZ;
+    passZ.setInputCloud(cloud);
+    passZ.setFilterFieldName("z");
+    passZ.setFilterLimits(-std::numeric_limits<float>::infinity(), 0.10);
+    passZ.filter(*filtered_cloud);
+    
+    // Filter in y direction
+    pcl::PassThrough<pcl::PointXYZRGB> passY;
+    passY.setInputCloud(filtered_cloud);
+    passY.setFilterFieldName("y");
+    passY.setFilterLimits(-4.0, 4.0);
+    passY.filter(*filtered_cloud);
+    
+    return filtered_cloud;
+}
+
 
 
 void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
@@ -211,7 +238,7 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     // Downsample the point cloud using a VoxelGrid filter
     pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid;
     voxel_grid.setInputCloud(combined_cloud.makeShared());
-    voxel_grid.setLeafSize(0.02f, 0.02f, 0.02f);
+    voxel_grid.setLeafSize(0.005f, 0.005f, 0.005f);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     voxel_grid.filter(*downsampled_cloud);
 
@@ -251,9 +278,9 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
         // Set segmentation parameters
         seg.setOptimizeCoefficients(true);
         seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
-        seg.setNormalDistanceWeight(0.4);
+        seg.setNormalDistanceWeight(0.7);
         seg.setMethodType(pcl::SAC_RANSAC);
-        seg.setMaxIterations(100);
+        seg.setMaxIterations(50);
         seg.setDistanceThreshold(0.01);
 
         // Segment plane
@@ -338,8 +365,8 @@ void planeSegmentation(pcl::PointCloud<pcl::PointXYZRGB> combined_cloud)
     // Apply Radius Outlier Removal filter
     pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> outlier_removal;
     outlier_removal.setInputCloud(outlier_cloud);
-    outlier_removal.setRadiusSearch(0.05);
-    outlier_removal.setMinNeighborsInRadius(10);
+    outlier_removal.setRadiusSearch(0.02);
+    outlier_removal.setMinNeighborsInRadius(20);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_outlier_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     outlier_removal.filter(*filtered_outlier_cloud);
 
