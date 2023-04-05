@@ -29,16 +29,19 @@ import concurrent.futures
 
 
 def DetectObjects(data_1,data_2,drive_mode):
-    load = 0.5
-    point_original = combinePCD(data_1,data_2)
     print('_______________________')
     print('Time od calling DetectObjects: ',time.time())
+    start_time = time.time()
+    load = 0.5
+    point_original = combinePCD(data_1,data_2)
+    print('Points combined: {}'.format(time.time()-start_time))
+    
  
     def DetectObjectsOnFloor(point_original, drive_mode,load):
-        time_start = time.time()
+        start_time1 = time.time()
         #print('1: {}'.format(time_0))
         # Escape room for increasing the speed.
-        original_box = DrawBoxAtPoint(0.5,1,lenght=2 + 0.4, r=0, g=1 , b=0.3)
+        original_box = DrawBoxAtPoint(0.5,1,lenght=1.5 + 0.4, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
         point_original = o3d.geometry.PointCloud.crop(point_original,original_box_PCD)
@@ -100,19 +103,18 @@ def DetectObjects(data_1,data_2,drive_mode):
 
         Talker_PCD(point_cloud_floor_pcd, 0)
         #print('7: {}'.format(time.time()-time_0))
-        time_end = time.time()
-        print('Time for detecting objects on floor: {} '.format(time_end - start_time))
+        print('Time for detecting objects on floor: {} '.format(time.time() - start_time1))
         return traffic_light_floor    
 
     def DetectObjectsInTheAir(point_original,drive_mode,load):
-        start_time = time.time()
+        start_time2 = time.time()
         traffic_light_up = []
         point_cloud = PCDToNumpy(point_original)
         mask = point_cloud[:, 2] >= 0.1
         point_cloud_up = point_cloud[mask]
         point_cloud_up = (DownSample((point_cloud_up),0.01))
         point_cloud_up_pcd = NumpyToPCD(point_cloud_up)
-        point_cloud_up_pcd= o3d.geometry.PointCloud.random_down_sample(point_cloud_up_pcd,0.5)
+        point_cloud_up_pcd= o3d.geometry.PointCloud.random_down_sample(point_cloud_up_pcd,0.9)
         point_cloud_up_pcd= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up_pcd,10)
         downsampled_original_np = PCDToNumpy(point_cloud_up_pcd)
         plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.55, threshold=0.1, init_n=3, iterations=50)
@@ -140,16 +142,15 @@ def DetectObjects(data_1,data_2,drive_mode):
         Talker_PCD(point_cloud_up_pcd,2)
         Talker_PCD(objects_viz,3)
         #TalkerTrafficLight(min(traffic_light_up),0)
-        time_end = time.time()
-        print('Time for detecting objects in the air: {} '.format(time_end - start_time))
+        print('Time for detecting objects in the air: {} '.format(time.time() - start_time2))
         return traffic_light_up
 
     
     try:
         
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            start_time = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+            
             future1 = executor.submit(DetectObjectsOnFloor, point_original, drive_mode, load)
             future2 = executor.submit(DetectObjectsInTheAir, point_original, drive_mode, load)
 
@@ -274,65 +275,75 @@ def combinePCD(data_1, data_2):
     y_rot = 0
     z_rot = -90
 
-    br_left = tf2_ros.TransformBroadcaster()
-    transform_stamped = TransformStamped()
-    transform_stamped.header.stamp = rospy.Time.now()
-    transform_stamped.header.frame_id = "cam_1_link"
-    transform_stamped.child_frame_id = "cam_left_link"
-    transform_stamped.transform.translation.x = -x_translation
-    transform_stamped.transform.translation.y = z_translation
-    transform_stamped.transform.translation.z = -y_translation
+    # br_left = tf2_ros.TransformBroadcaster()
+    # transform_stamped = TransformStamped()
+    # transform_stamped.header.stamp = rospy.Time.now()
+    # transform_stamped.header.frame_id = "cam_1_link"
+    # transform_stamped.child_frame_id = "cam_left_link"
+    # transform_stamped.transform.translation.x = -x_translation
+    # transform_stamped.transform.translation.y = z_translation
+    # transform_stamped.transform.translation.z = -y_translation
 
-    # Assuming you have roll, pitch, and yaw angles in radians
-    roll = np.deg2rad(-x_rot)
-    pitch = np.deg2rad(y_rot)
-    yaw = np.deg2rad(z_rot)
-    quaternion = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
+    # # Assuming you have roll, pitch, and yaw angles in radians
+    # roll = np.deg2rad(-x_rot)
+    # pitch = np.deg2rad(y_rot)
+    # yaw = np.deg2rad(z_rot)
+    # quaternion = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
 
-    transform_stamped.transform.rotation.x = quaternion[0]
-    transform_stamped.transform.rotation.y = quaternion[1]
-    transform_stamped.transform.rotation.z = quaternion[2]
-    transform_stamped.transform.rotation.w = quaternion[3]
+    # transform_stamped.transform.rotation.x = quaternion[0]
+    # transform_stamped.transform.rotation.y = quaternion[1]
+    # transform_stamped.transform.rotation.z = quaternion[2]
+    # transform_stamped.transform.rotation.w = quaternion[3]
 
-    br_left.sendTransform(transform_stamped)
+    # br_left.sendTransform(transform_stamped)
 
-    br_right = tf2_ros.TransformBroadcaster()
-    transform_stamped = TransformStamped()
-    transform_stamped.header.stamp = rospy.Time.now()
-    transform_stamped.header.frame_id = "cam_1_link"
-    transform_stamped.child_frame_id = "cam_right_link"
-    transform_stamped.transform.translation.x = x_translation 
-    transform_stamped.transform.translation.y = z_translation
-    transform_stamped.transform.translation.z = -y_translation
+    # br_right = tf2_ros.TransformBroadcaster()
+    # transform_stamped = TransformStamped()
+    # transform_stamped.header.stamp = rospy.Time.now()
+    # transform_stamped.header.frame_id = "cam_1_link"
+    # transform_stamped.child_frame_id = "cam_right_link"
+    # transform_stamped.transform.translation.x = x_translation 
+    # transform_stamped.transform.translation.y = z_translation
+    # transform_stamped.transform.translation.z = -y_translation
 
-    # Assuming you have roll, pitch, and yaw angles in radians
-    roll = np.deg2rad(x_rot)
-    pitch = np.deg2rad(y_rot)
-    yaw = np.deg2rad(z_rot)
-    quaternion = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
+    # # Assuming you have roll, pitch, and yaw angles in radians
+    # roll = np.deg2rad(x_rot)
+    # pitch = np.deg2rad(y_rot)
+    # yaw = np.deg2rad(z_rot)
+    # quaternion = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
 
-    transform_stamped.transform.rotation.x = quaternion[0]
-    transform_stamped.transform.rotation.y = quaternion[1]
-    transform_stamped.transform.rotation.z = quaternion[2]
-    transform_stamped.transform.rotation.w = quaternion[3]
+    # transform_stamped.transform.rotation.x = quaternion[0]
+    # transform_stamped.transform.rotation.y = quaternion[1]
+    # transform_stamped.transform.rotation.z = quaternion[2]
+    # transform_stamped.transform.rotation.w = quaternion[3]
 
-    br_right.sendTransform(transform_stamped)
+    # br_right.sendTransform(transform_stamped)
+
+    def euler_to_rot_matrix(alpha, beta, gamma):
+        Rz = np.array([[np.cos(alpha), -np.sin(alpha), 0],
+                    [np.sin(alpha), np.cos(alpha), 0],
+                    [0, 0, 1]])
+        Ry = np.array([[np.cos(beta), 0, np.sin(beta)],
+                    [0, 1, 0],
+                    [-np.sin(beta), 0, np.cos(beta)]])
+        Rx = np.array([[1, 0, 0],
+                    [0, np.cos(gamma), -np.sin(gamma)],
+                    [0, np.sin(gamma), np.cos(gamma)]])
+        
+        R = np.dot(Rz, np.dot(Rx, Ry))
+        return R
+
     def processData1(data_1):
-        global points_PCD1
         pc1 = ros_numpy.numpify(data_1)
 
-        points1=np.zeros((pc1.shape[0],3))
+        points1=np.zeros((pc1.shape[0],3), dtype=np.float64)
         translation = [-x_translation,y_translation,z_translation]
         
         #translation = [-x_translation+x_translation_offset, -y_translation, z_translation]
-        points1[:,0]=np.add(pc1['x'],0)
-        points1[:,1]=np.add(pc1['y'],0)
-        points1[:,2]=np.add(pc1['z'],0)
-        
-        points1 = (np.array(points1, dtype=np.float64))
-
-        
+        points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
         points_PCD1 = NumpyToPCD(points1)
+        points_PCD1= o3d.geometry.PointCloud.random_down_sample(points_PCD1,0.7)
+        points_PCD1= o3d.geometry.PointCloud.uniform_down_sample(points_PCD1,5)
         points_PCD1.translate(translation)
         R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
         points_PCD1.rotate(R1, center=(translation))
@@ -342,38 +353,32 @@ def combinePCD(data_1, data_2):
 
     # Define a function that will run in a separate thread to process data_2
     def processData2(data_2):
-        global points_PCD2
+        start_time_all = time.time()
         pc2 = ros_numpy.numpify(data_2)
-        translation = [x_translation,y_translation,z_translation]
-
-        points2=np.zeros((pc2.shape[0],3))
-        points2[:,0]=np.add(pc2['x'],0)
-        points2[:,1]=np.add(pc2['y'],0)
-        points2[:,2]=np.add(pc2['z'],0)
-        
-
-        points2 = (np.array(points2, dtype=np.float64))
-        
+        translation = [x_translation, y_translation, z_translation]
+        points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T
         points_PCD2 = NumpyToPCD(points2)
+        points_PCD2= o3d.geometry.PointCloud.random_down_sample(points_PCD2,0.7)
+        points_PCD2= o3d.geometry.PointCloud.uniform_down_sample(points_PCD2,5)
         points_PCD2.translate(translation)
-
         R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
         points_PCD2.rotate(R2, center=(translation))
+        print('PCD: {}'.format(time.time()-start_time_all))
         return points_PCD2
 
-    # Start two threads to process data_1 and data_2 simultaneously
-    thread_1 = threading.Thread(target=processData1, args=[data_1])
-    thread_2 = threading.Thread(target=processData2, args=[data_2])
-    thread_1.start()
-    thread_2.start()
 
-    # Wait for both threads to finish and get the results
-    thread_1.join()
-    thread_2.join()
+    # Start two threads to process data_1 and data_2 simultaneously
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        # Submit the tasks and collect the future objects
+        future1 = executor.submit(processData1, data_1)
+        future2 = executor.submit(processData2, data_2)
+        # Wait for the tasks to complete and get the results
+        points_PCD1 = future1.result()
+        points_PCD2 = future2.result()
 
     points_PCD = points_PCD1 + points_PCD2
-    points_PCD= o3d.geometry.PointCloud.random_down_sample(points_PCD,0.7)
-    points_PCD= o3d.geometry.PointCloud.uniform_down_sample(points_PCD,5)
+    # points_PCD= o3d.geometry.PointCloud.random_down_sample(points_PCD,0.7)
+    # points_PCD= o3d.geometry.PointCloud.uniform_down_sample(points_PCD,5)
     R = points_PCD.get_rotation_matrix_from_xyz((np.deg2rad(-75), np.deg2rad(0), np.deg2rad(0)))
     points_PCD.rotate(R, center=(0,0,0))
     #points_PCD.translate((0,-0.4,0))
@@ -635,7 +640,7 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
     points_copy = points.copy()
     index_arr = []
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
         while len(points_copy) > min_ratio * N:
             future = executor.submit(PlaneRegression, points_copy, threshold=threshold, init_n=init_n, iter=iterations)
             w, index = future.result()
@@ -646,7 +651,13 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
     return plane_list, index_arr
 
 
-
+def DataCheck(data_1,data_2,drive_mode):
+    print('+++++++++++++++++++++++')
+    print('      DATA READY')
+    print('TIME: {}'.format(time.time()))
+    print('+++++++++++++++++++++++')
+    DetectObjects(data_1,data_2,drive_mode)
+   
 
 if __name__ == '__main__':
     try:
@@ -665,11 +676,12 @@ if __name__ == '__main__':
         data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         print("Started the program.")
-        queue_size = 60  # Adjust queue_size to control the rate of synchronization
+        queue_size = 10 # Adjust queue_size to control the rate of synchronization
         slop = 1  # Adjust slop to control the tolerance for the time difference between messages
         
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2, drive_mode], queue_size, slop, allow_headerless=True)
-        ts.registerCallback(DetectObjects)
+        ts.registerCallback(DataCheck)
+        #ts.registerCallback(DetectObjects)
 
         #ts.registerCallback(DetectObjectsOnFloor)
         #ts.registerCallback(DetectObjectsInTheAir)
