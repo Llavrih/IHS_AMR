@@ -286,15 +286,20 @@ def visualize_bounding_boxes(boxes):
                 marker.action = Marker.DELETE
                 marker_pub.publish(marker)
 
-def Rx(angle):
-    c, s = np.cos(np.deg2rad(angle)), np.sin(np.deg2rad(angle))
-    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
-def Ry(angle):
-    c, s = np.cos(np.deg2rad(angle)), np.sin(np.deg2rad(angle))
-    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
-def Rz(angle):
-    c, s = np.cos(np.deg2rad(angle)), np.sin(np.deg2rad(angle))
-    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+def Rx(theta):
+  return np.matrix([[ 1, 0           , 0           ],
+                   [ 0, np.cos(np.deg2rad(theta)),-np.sin(np.deg2rad(theta))],
+                   [ 0, np.sin(np.deg2rad(theta)), np.cos(np.deg2rad(theta))]])
+  
+def Ry(theta):
+  return np.matrix([[ np.cos(np.deg2rad(theta)), 0, np.sin(np.deg2rad(theta))],
+                   [ 0           , 1, 0           ],
+                   [-np.sin(np.deg2rad(theta)), 0, np.cos(np.deg2rad(theta))]])
+  
+def Rz(theta):
+  return np.matrix([[ np.cos(np.deg2rad(theta)), -np.sin(np.deg2rad(theta)), 0 ],
+                   [ np.sin(np.deg2rad(theta)), np.cos(np.deg2rad(theta)) , 0 ],
+                   [ 0           , 0            , 1 ]])
 
 import cProfile
 import pstats
@@ -664,11 +669,11 @@ def NumpyToPCD(xyz):
     """
 
     pcd = o3d.geometry.PointCloud()
-    xyz = np.array(xyz, dtype=np.float64)
+    if not isinstance(xyz, np.ndarray) or xyz.dtype != np.float64:
+        xyz = np.array(xyz, dtype=np.float64)
     pcd.points = o3d.utility.Vector3dVector(xyz)
 
     return pcd
-
 
 def RemoveNan(points):
     """ remove nan value of point clouds
