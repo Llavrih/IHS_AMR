@@ -29,8 +29,12 @@ import concurrent.futures
 from geometry_msgs.msg import Polygon, Point32
 from visualization_msgs.msg import Marker, MarkerArray
 
+global objects_detected 
+object_detected = True
 
 def DetectObjects(data_1,data_2,drive_mode):
+    global objects_detected 
+    object_detected = False
     print('_______________________')
     print('Time od calling DetectObjects: ',time.time())
     start_time = time.time()
@@ -150,7 +154,7 @@ def DetectObjects(data_1,data_2,drive_mode):
     try:
         
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             
             future1 = executor.submit(DetectObjectsOnFloor, point_original, drive_mode, load)
             future2 = executor.submit(DetectObjectsInTheAir, point_original, drive_mode, load)
@@ -158,10 +162,12 @@ def DetectObjects(data_1,data_2,drive_mode):
             traffic_light_floor = future1.result()
             traffic_light_up = future2.result()
             TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
+            object_detected = True
             print('Stop', abs(start_time - time.time()))
             print('_______________________')
 
     except Exception as e:
+        object_detected = True
         print("Error: unable to start thread")
         print(e)
 
@@ -295,6 +301,12 @@ def Rz(theta):
                    [ np.sin(np.deg2rad(theta)), np.cos(np.deg2rad(theta)) , 0 ],
                    [ 0           , 0            , 1 ]])
 
+import cProfile
+import pstats
+from io import StringIO
+import time
+
+
 def combinePCD(data_1, data_2):
     # Define a function that will run in a separate thread to process data_1
 
@@ -354,23 +366,78 @@ def combinePCD(data_1, data_2):
 
     # br_right.sendTransform(transform_stamped)
 
+    def downsample_pointcloud(points, downsample_ratio):
+        num_points = points.shape[0]
+        num_downsampled_points = int(num_points * downsample_ratio)
+
+        # Generate random indices
+        random_indices = np.random.choice(num_points, num_downsampled_points, replace=False)
+
+        # Extract points using the random indices
+        downsampled_points = points[random_indices]
+
+        return downsampled_points
+
+
 
     def processData1(data_1):
-        pc1 = ros_numpy.numpify(data_1)
+        def inner_process_data():
+            start_time = time.time()
+            start_time_all = time.time()
+            pc1 = ros_numpy.numpify(data_1)
+            print('Size of data: ', np.size(pc1))
+            print('1: {}'.format(time.time() - start_time))
+            start_time = time.time()
 
-        points1=np.zeros((pc1.shape[0],3), dtype=np.float64)
-        translation = [-x_translation,y_translation,z_translation]
-        
-        #translation = [-x_translation+x_translation_offset, -y_translation, z_translation]
-        points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-        points_PCD1 = NumpyToPCD(points1)
-        points_PCD1= o3d.geometry.PointCloud.random_down_sample(points_PCD1,0.7)
-        points_PCD1= o3d.geometry.PointCloud.uniform_down_sample(points_PCD1,5)
-        points_PCD1.translate(translation)
-        R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
-        points_PCD1.rotate(R1, center=(translation))
+            points1 = np.zeros((pc1.shape[0], 3), dtype=np.float64)
+            print('2: {}'.format(time.time() - start_time))
+            start_time = time.time()
+            translation = [-x_translation, y_translation, z_translation]
+            print('3: {}'.format(time.time() - start_time))
+            start_time = time.time()
+            points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
 
-        return points_PCD1
+            print('4: {}'.format(time.time() - start_time))
+            start_time = time.time()
+            points_PCD1 = NumpyToPCD(points1)
+            print('5: {}'.format(time.time() - start_time))
+            start_time = time.time()
+            points_PCD1 = o3d.geometry.PointCloud.random_down_sample(points_PCD1, 0.7)
+            print('6: {}'.format(time.time() - start_time))
+            start_time = time.time()
+            points_PCD1 = o3d.geometry.PointCloud.uniform_down_sample(points_PCD1, 5)
+            print('7: {}'.format(time.time() - start_time))
+            start_time = time.time()
+            points_PCD1.translate(translation)
+            print('8: {}'.format(time.time() - start_time))
+            start_time = time.time()
+            R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
+            print('9: {}'.format(time.time() - start_time))
+            start_time = time.time()
+            points_PCD1.rotate(R1, center=(translation))
+            print('10: {}'.format(time.time() - start_time))
+            print('11: {}'.format(time.time() - start_time_all))
+
+            return points_PCD1
+
+        # Create a profile object
+        pr = cProfile.Profile()
+
+        # Profile your function
+        pr.enable()
+        result = inner_process_data()
+        pr.disable()
+
+        # Store the profiling results in a StringIO object
+        s = StringIO()
+        sortby = 'cumulative'
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+
+        # Print the profiling results
+        ps.print_stats()
+        print(s.getvalue())
+
+        return result
 
 
     # Define a function that will run in a separate thread to process data_2
@@ -390,7 +457,7 @@ def combinePCD(data_1, data_2):
 
 
     # Start two threads to process data_1 and data_2 simultaneously
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         # Submit the tasks and collect the future objects
         future1 = executor.submit(processData1, data_1)
         future2 = executor.submit(processData2, data_2)
@@ -602,11 +669,11 @@ def NumpyToPCD(xyz):
     """
 
     pcd = o3d.geometry.PointCloud()
-    if not isinstance(xyz, np.ndarray) or xyz.dtype != np.float64:
-        xyz = np.array(xyz, dtype=np.float64)
+    xyz = np.array(xyz, dtype=np.float64)
     pcd.points = o3d.utility.Vector3dVector(xyz)
 
     return pcd
+
 
 def RemoveNan(points):
     """ remove nan value of point clouds
@@ -662,7 +729,7 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
     points_copy = points.copy()
     index_arr = []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         while len(points_copy) > min_ratio * N:
             future = executor.submit(PlaneRegression, points_copy, threshold=threshold, init_n=init_n, iter=iterations)
             w, index = future.result()
@@ -678,7 +745,9 @@ def DataCheck(data_1,data_2,drive_mode):
     print('      DATA READY')
     print('TIME: {}'.format(time.time()))
     print('+++++++++++++++++++++++')
-    DetectObjects(data_1,data_2,drive_mode)
+    global object_detected
+    if object_detected == True:
+        DetectObjects(data_1,data_2,drive_mode)
    
 
 if __name__ == '__main__':
