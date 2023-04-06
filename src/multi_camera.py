@@ -675,6 +675,7 @@ def NumpyToPCD(xyz):
 
     return pcd
 
+
 def RemoveNan(points):
     """ remove nan value of point clouds
     Args:
