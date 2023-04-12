@@ -31,7 +31,8 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 global objects_detected 
 object_detected = True
-
+from memory_profiler import profile
+@profile
 def DetectObjects(data_1,data_2,drive_mode):
     global objects_detected 
     object_detected = False
@@ -40,7 +41,6 @@ def DetectObjects(data_1,data_2,drive_mode):
     start_time = time.time()
     load = 0.5
     point_original = combinePCD(data_1,data_2)
-    CallCreateMarker(drive_mode)
     print('Points combined: {}'.format(time.time()-start_time))
     
  
@@ -80,7 +80,7 @@ def DetectObjects(data_1,data_2,drive_mode):
 
         cl_arr = o3d.geometry.PointCloud()
         radii = np.array([0.002 + 0.002 * i for i in range(0, 4, 1)])
-        nb_points = np.array([10 + 1 * i for i in range(0, 4, 1)])
+        nb_points = np.array([8 + 1 * i for i in range(0, 4, 1)])
         distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
         #print('5: {}'.format(time.time()-time_0))
         for i in range(4):
@@ -378,8 +378,7 @@ def combinePCD(data_1, data_2):
 
         return downsampled_points
 
-
-
+    
     def processData1(data_1):
         def inner_process_data():
             start_time = time.time()
@@ -402,10 +401,10 @@ def combinePCD(data_1, data_2):
             points_PCD1 = NumpyToPCD(points1)
             print('5: {}'.format(time.time() - start_time))
             start_time = time.time()
-            points_PCD1 = o3d.geometry.PointCloud.random_down_sample(points_PCD1, 0.7)
+            points_PCD1 = o3d.geometry.PointCloud.random_down_sample(points_PCD1, 0.8)
             print('6: {}'.format(time.time() - start_time))
             start_time = time.time()
-            points_PCD1 = o3d.geometry.PointCloud.uniform_down_sample(points_PCD1, 5)
+            points_PCD1 = o3d.geometry.PointCloud.uniform_down_sample(points_PCD1, 6)
             print('7: {}'.format(time.time() - start_time))
             start_time = time.time()
             points_PCD1.translate(translation)
@@ -447,8 +446,8 @@ def combinePCD(data_1, data_2):
         translation = [x_translation, y_translation, z_translation]
         points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T
         points_PCD2 = NumpyToPCD(points2)
-        points_PCD2= o3d.geometry.PointCloud.random_down_sample(points_PCD2,0.7)
-        points_PCD2= o3d.geometry.PointCloud.uniform_down_sample(points_PCD2,5)
+        points_PCD2= o3d.geometry.PointCloud.random_down_sample(points_PCD2,0.8)
+        points_PCD2= o3d.geometry.PointCloud.uniform_down_sample(points_PCD2,6)
         points_PCD2.translate(translation)
         R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
         points_PCD2.rotate(R2, center=(translation))
@@ -773,6 +772,8 @@ if __name__ == '__main__':
         
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2, drive_mode], queue_size, slop, allow_headerless=True)
         ts.registerCallback(DataCheck)
+        
+  
         #ts.registerCallback(DetectObjects)
 
         #ts.registerCallback(DetectObjectsOnFloor)
@@ -786,7 +787,7 @@ if __name__ == '__main__':
         pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
         polygon_pub = rospy.Publisher("/polygons", MarkerArray, queue_size=1)
         active_polygon_pub = rospy.Publisher("/active_polygons", MarkerArray, queue_size=1)
-        
+        rospy.Subscriber("/drive_mode",UInt8,CallCreateMarker)
             
 
    
