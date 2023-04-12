@@ -164,7 +164,8 @@ def DetectObjects(data_1,data_2,drive_mode):
             TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
             object_detected = True
             print('***********************')
-            print('Stop', abs(start_time - time.time()))
+            print('Stop', time.time()-start_time)
+            pub_stop_time.publish(time.time()-start_time)
             print('***********************')
             print('_______________________')
 
@@ -789,6 +790,8 @@ if __name__ == '__main__':
         pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
         polygon_pub = rospy.Publisher("/polygons", MarkerArray, queue_size=1)
         active_polygon_pub = rospy.Publisher("/active_polygons", MarkerArray, queue_size=1)
+        pub_stop_time = rospy.Publisher('/realsense_freq', Float64, queue_size=10)
+
         rospy.Subscriber("/drive_mode",UInt8,CallCreateMarker)
             
 
