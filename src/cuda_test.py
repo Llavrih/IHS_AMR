@@ -365,6 +365,7 @@ def combinePCD(data_1, data_2):
     points_PCD.rotate(R, center=(0,0,0))
     original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
     original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
+    points_PCD = o3d.t.geometry.PointCloud.to_legacy(points_PCD)
     point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
 
     return point_original
@@ -381,7 +382,7 @@ def NumpyToPCDT(xyz,translation,R):
     pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.15)
     pcd.translate(translation)
     pcd.rotate(R, center=(translation))
-    pcd = o3d.t.geometry.PointCloud.to_legacy(pcd)
+    #pcd = o3d.t.geometry.PointCloud.to_legacy(pcd)
 
     return pcd
 
