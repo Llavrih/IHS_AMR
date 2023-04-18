@@ -116,6 +116,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         return traffic_light_floor    
 
     def DetectObjectsInTheAir(point_original,drive_mode,load):
+        
         start_time2 = time.time()
         traffic_light_up = []
         point_cloud = PCDToNumpy(point_original)
@@ -129,6 +130,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.55, threshold=0.1, init_n=3, iterations=50)
         planes = []
         boxes = []
+        
         """find boxes for planes"""
         for _, plane in plane_list:
             box = NumpyToPCD(plane).get_oriented_bounding_box()
@@ -137,9 +139,10 @@ def DetectObjects(data_1,data_2,drive_mode):
 
         planes_np = (np.concatenate(planes, axis=0))
         index_arr_new  =[]
+        index_arr = np.asarray(index_arr)[0]
         for i in range(len(index_arr)):
             index_arr_new = index_arr_new + index_arr[i]
-        #print("index arr new",(index_arr_new))    
+  
         outlier =  o3d.geometry.PointCloud.select_by_index(point_cloud_up_pcd,index_arr_new,invert=True)
         outlier = PCDToNumpy(outlier)
         #print(outlier)
@@ -244,8 +247,7 @@ def DetectTraffic(objects,load,drive_mode):
         return [6]
     else: 
         first_1_percent = int(len(objects) * 0.01)  # Calculate the index corresponding to 5% of the list
-        objects_1_percent = objects[:first_1_percent+1]  # Select the first 5% of objects
-        
+        objects_1_percent = objects[:first_1_percent+1]  # Select the first 5% of objects 
         for obj in objects_1_percent:
             for i in range(6):
                 if IsPointInsidePoly(obj[0],(obj[1]),drive_zones[drive_mode][i]) == True:
@@ -256,9 +258,12 @@ def DetectTraffic(objects,load,drive_mode):
                     # active_polygon_pub.publish(marker_array)
 
                     object_in_zone.append(i)
+                else:
+                    object_in_zone.append(6)
+        return object_in_zone
 
-        else:                  
-            return object_in_zone
+
+    
         
 
 def visualize_bounding_boxes(boxes):
@@ -316,54 +321,7 @@ def Rz(theta):
                    [ np.sin(np.deg2rad(theta)), np.cos(np.deg2rad(theta)) , 0 ],
                    [ 0           , 0            , 1 ]])
 
-
-def rospc_to_o3dpc(rospc, remove_nans=False):
-    """ covert ros point cloud to open3d point cloud
-    Args: 
-        rospc (sensor.msg.PointCloud2): ros point cloud message
-        remove_nans (bool): if true, ignore the NaN points
-    Returns: 
-        o3dpc (open3d.geometry.PointCloud): open3d point cloud
-    """
-    field_names = [field.name for field in rospc.fields]
-    is_rgb = 'rgb' in field_names
-    cloud_array = ros_numpy.point_cloud2.pointcloud2_to_array(rospc).ravel()
-    if remove_nans:
-        mask = np.isfinite(cloud_array['x']) & np.isfinite(cloud_array['y']) & np.isfinite(cloud_array['z'])
-        cloud_array = cloud_array[mask]
-    if is_rgb:
-        cloud_npy = np.zeros(cloud_array.shape + (4,), dtype=np.float)
-    else: 
-        cloud_npy = np.zeros(cloud_array.shape + (3,), dtype=np.float)
-    
-    cloud_npy[...,0] = cloud_array['x']
-    cloud_npy[...,1] = cloud_array['y']
-    cloud_npy[...,2] = cloud_array['z']
-    o3dpc = open3d.geometry.PointCloud()
-
-    if len(np.shape(cloud_npy)) == 3:
-        cloud_npy = np.reshape(cloud_npy[:, :, :3], [-1, 3], 'F')
-    o3dpc.points = open3d.utility.Vector3dVector(cloud_npy[:, :3])
-
-    if is_rgb:
-        rgb_npy = cloud_array['rgb']
-        rgb_npy.dtype = np.uint32
-        r = np.asarray((rgb_npy >> 16) & 255, dtype=np.uint8)
-        g = np.asarray((rgb_npy >> 8) & 255, dtype=np.uint8)
-        b = np.asarray(rgb_npy & 255, dtype=np.uint8)
-        rgb_npy = np.asarray([r, g, b])
-        rgb_npy = rgb_npy.astype(np.float)/255
-        rgb_npy = np.swapaxes(rgb_npy, 0, 1)
-        o3dpc.colors = open3d.utility.Vector3dVector(rgb_npy)
-    return o3dpc
-
-def combinePCD(data_1, data_2):
-    # Define a function that will run in a separate thread to process data_1
-
-    # at_init = 25.4647972
-    # bt_init = -555.8204027
-    # ct_init = 386.0848065
-    
+def combinePCD(data_1, data_2):  
     x_translation = 0.34
     y_translation = -0.2
     z_translation = 0.0
@@ -371,108 +329,27 @@ def combinePCD(data_1, data_2):
     x_rot = 61.587353023478485/2 
     y_rot = 0
     z_rot = -90
-
-    # br_left = tf2_ros.TransformBroadcaster()
-    # transform_stamped = TransformStamped()
-    # transform_stamped.header.stamp = rospy.Time.now()
-    # transform_stamped.header.frame_id = "cam_1_link"
-    # transform_stamped.child_frame_id = "cam_left_link"
-    # transform_stamped.transform.translation.x = -x_translation
-    # transform_stamped.transform.translation.y = z_translation
-    # transform_stamped.transform.translation.z = -y_translation
-
-    # # Assuming you have roll, pitch, and yaw angles in radians
-    # roll = np.deg2rad(-x_rot)
-    # pitch = np.deg2rad(y_rot)
-    # yaw = np.deg2rad(z_rot)
-    # quaternion = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
-
-    # transform_stamped.transform.rotation.x = quaternion[0]
-    # transform_stamped.transform.rotation.y = quaternion[1]
-    # transform_stamped.transform.rotation.z = quaternion[2]
-    # transform_stamped.transform.rotation.w = quaternion[3]
-
-    # br_left.sendTransform(transform_stamped)
-
-    # br_right = tf2_ros.TransformBroadcaster()
-    # transform_stamped = TransformStamped()
-    # transform_stamped.header.stamp = rospy.Time.now()
-    # transform_stamped.header.frame_id = "cam_1_link"
-    # transform_stamped.child_frame_id = "cam_right_link"
-    # transform_stamped.transform.translation.x = x_translation 
-    # transform_stamped.transform.translation.y = z_translation
-    # transform_stamped.transform.translation.z = -y_translation
-
-    # # Assuming you have roll, pitch, and yaw angles in radians
-    # roll = np.deg2rad(x_rot)
-    # pitch = np.deg2rad(y_rot)
-    # yaw = np.deg2rad(z_rot)
-    # quaternion = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
-
-    # transform_stamped.transform.rotation.x = quaternion[0]
-    # transform_stamped.transform.rotation.y = quaternion[1]
-    # transform_stamped.transform.rotation.z = quaternion[2]
-    # transform_stamped.transform.rotation.w = quaternion[3]
-
-    # br_right.sendTransform(transform_stamped)
-
     
     def processData1(data_1):
-        start_time = time.time()
         start_time_all = time.time()
         pc1 = ros_numpy.numpify(data_1)
-        print(type(pc1))
-        # print('Size of data: ', np.size(pc1))
-        print('1: {}'.format(time.time() - start_time))
-        start_time = time.time()
-
         points1 = np.zeros((pc1.shape[0], 3), dtype=np.float64)
-        print('2: {}'.format(time.time() - start_time))
-        start_time = time.time()
         translation = [-x_translation, y_translation, z_translation]
-        print('3: {}'.format(time.time() - start_time))
-        start_time = time.time()
         points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-
-        print('4: {}'.format(time.time() - start_time))
-        start_time = time.time()
-        points_PCD1 = NumpyToPCD(points1)
-        print('5: {}'.format(time.time() - start_time))
-        start_time = time.time()
-        #points_PCD1 = o3d.geometry.PointCloud.random_down_sample(points_PCD1, 0.8)
-        print('6: {}'.format(time.time() - start_time))
-        start_time = time.time()
-        #points_PCD1 = o3d.geometry.PointCloud.uniform_down_sample(points_PCD1, 6)
-        print('7: {}'.format(time.time() - start_time))
-        start_time = time.time()
-        points_PCD1.translate(translation)
-        print('8: {}'.format(time.time() - start_time))
-        start_time = time.time()
         R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
-        print('9: {}'.format(time.time() - start_time))
-        start_time = time.time()
-        points_PCD1.rotate(R1, center=(translation))
-        print('10: {}'.format(time.time() - start_time))
-        print('PCD1: {}'.format(time.time() - start_time_all))
-
+        points_PCD1 = NumpyToPCDT(points1,translation,R1)
+        print('PCD1: {}'.format(time.time()-start_time_all))
         return points_PCD1
 
-
-    # Define a function that will run in a separate thread to process data_2
     def processData2(data_2):
         start_time_all = time.time()
         pc2 = ros_numpy.numpify(data_2)
         translation = [x_translation, y_translation, z_translation]
         points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T
-        points_PCD2 = NumpyToPCD(points2)
-        points_PCD2= o3d.geometry.PointCloud.random_down_sample(points_PCD2,0.8)
-        points_PCD2= o3d.geometry.PointCloud.uniform_down_sample(points_PCD2,6)
-        points_PCD2.translate(translation)
         R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
-        points_PCD2.rotate(R2, center=(translation))
+        points_PCD2 = NumpyToPCDT(points2,translation,R2)
         print('PCD2: {}'.format(time.time()-start_time_all))
         return points_PCD2
-
 
     # Start two threads to process data_1 and data_2 simultaneously
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
@@ -484,18 +361,29 @@ def combinePCD(data_1, data_2):
         points_PCD2 = future2.result()
 
     points_PCD = points_PCD1 + points_PCD2
-    # points_PCD= o3d.geometry.PointCloud.random_down_sample(points_PCD,0.7)
-    # points_PCD= o3d.geometry.PointCloud.uniform_down_sample(points_PCD,5)
-    R = points_PCD.get_rotation_matrix_from_xyz((np.deg2rad(-75), np.deg2rad(0), np.deg2rad(0)))
+    R = np.array(Rx(-75))
     points_PCD.rotate(R, center=(0,0,0))
-    #points_PCD.translate((0,-0.4,0))
-
     original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
     original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
-    origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
     point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
 
     return point_original
+
+def NumpyToPCDT(xyz,translation,R):
+    """ convert numpy ndarray to open3D point cloud
+    Args:
+        xyz (ndarray):
+    Returns:
+        [open3d.geometry.PointCloud]:
+    """
+    pcd = o3d.t.geometry.PointCloud(o3c.Device("cuda:1"))
+    pcd = o3d.t.geometry.PointCloud(xyz)
+    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.15)
+    pcd.translate(translation)
+    pcd.rotate(R, center=(translation))
+    pcd = o3d.t.geometry.PointCloud.to_legacy(pcd)
+
+    return pcd
 
 def Talker_PCD(pointcloud,num):
     pointcloud = convertCloudFromOpen3dToRos((pointcloud),"cam_1_link")
@@ -687,19 +575,9 @@ def NumpyToPCD(xyz):
     Returns:
         [open3d.geometry.PointCloud]:
     """
-
-    #pcd = o3d.geometry.PointCloud()
-    # if not isinstance(xyz, np.ndarray) or xyz.dtype != np.float64:
-    #     xyz = np.array(xyz, dtype=np.float64)
-    #pcd.points = o3d.utility.Vector3dVector(xyz)
     pcd = o3d.t.geometry.PointCloud(o3c.Device("cuda:0"))
-    pcd = o3d.t.geometry.PointCloud()
-
     pcd = o3d.t.geometry.PointCloud(xyz)
-    print(pcd)
     pcd = o3d.t.geometry.PointCloud.to_legacy(pcd)
-
-
     return pcd
 
 
@@ -737,19 +615,22 @@ def PlaneRegression(points, threshold, init_n, iter):
         [ndarray, List]: 4 x 1 plane equation weights, List of plane point index
     """
 
-    pcd = NumpyToPCD(points)
-    pcd.points = o3d.utility.Vector3dVector(points) 
+    pcd = o3d.t.geometry.PointCloud(o3c.Device("cuda:0"))
+    pcd = o3d.t.geometry.PointCloud(points)
+    
 
     _, inliers = pcd.segment_plane(distance_threshold=threshold,
                                    ransac_n=init_n,
                                    num_iterations=iter)
-
-    inlier_points = np.asarray(pcd.select_by_index(inliers).points)
-
+    inliers_out = (o3d.core.Tensor.numpy(inliers))
+    inlier_points = (pcd.select_by_index(inliers))
+    inlier_points = o3d.t.geometry.PointCloud.to_legacy(inlier_points)
+    inlier_points = PCDToNumpy(inlier_points)
+    
     A = np.vstack((inlier_points[:, :2].T, np.ones(len(inlier_points)))).T
     w = np.linalg.lstsq(A, inlier_points[:, 2], rcond=None)[0]
-
-    return w, inliers
+    
+    return w, inliers_out
 
 def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
     plane_list = []
