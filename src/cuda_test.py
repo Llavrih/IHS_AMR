@@ -51,8 +51,7 @@ def DetectObjects(data_1,data_2,drive_mode):
     def DetectObjectsOnFloor(point_original, drive_mode,load):
         start_time1 = time.time()
         time_0 = time.time()
-        print('1: {}'.format(time_0))
-        
+
         # Escape room for increasing the speed.
         original_box = DrawBoxAtPoint(0.5,1,lenght=2 + 0.4, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
@@ -62,12 +61,9 @@ def DetectObjects(data_1,data_2,drive_mode):
         mask = point_cloud[:, 2] <= 0.1
         point_cloud_floor = point_cloud[mask]
         point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
-        print('2: {}'.format(time.time()-time_0))
-        time_0 = time.time()
-        plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.5, threshold=0.01, init_n=3, iterations=100)
 
-        print('3: {}'.format(time.time()-time_0))
-        time_0 = time.time()
+        plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.7, threshold=0.01, init_n=3, iterations=100)
+
         planes_np = []
         boxes = []
 
@@ -77,8 +73,6 @@ def DetectObjects(data_1,data_2,drive_mode):
             planes_np.append(plane)
 
         planes_np = np.concatenate(planes_np, axis=0)
-        print('4: {}'.format(time.time()-time_0))
-        time_0 = time.time()
         index_arr_new = np.concatenate(index_arr, axis=0)
         outlier = o3d.geometry.PointCloud.select_by_index(point_cloud_floor_pcd, index_arr_new, invert=True)
         outlier_np = PCDToNumpy(outlier)
@@ -90,8 +84,6 @@ def DetectObjects(data_1,data_2,drive_mode):
         radii = np.array([0.002 + 0.002 * i for i in range(0, 4, 1)])
         nb_points = np.array([8 + 1 * i for i in range(0, 4, 1)])
         distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
-        print('5: {}'.format(time.time()-time_0))
-        time_0 = time.time()
         for i in range(4):
             distance_mask = abs(objects[:, 0]) <= distance_cut[i]
             objects_cut = objects[distance_mask]
@@ -100,8 +92,6 @@ def DetectObjects(data_1,data_2,drive_mode):
                 cl.points = o3d.utility.Vector3dVector(objects_cut)
                 cl, _ = cl.remove_radius_outlier(nb_points=nb_points[i], radius=radii[i])
                 cl_arr += cl
-        print('6: {}'.format(time.time()-time_0))
-        time_0 = time.time()
         objects_viz = cl_arr
         objects_viz_np = PCDToNumpy(objects_viz)
         # objects_viz = NumpyToPCD(objects)
@@ -120,7 +110,6 @@ def DetectObjects(data_1,data_2,drive_mode):
             #TalkerTrafficLight(min(traffic_light_floor),1)
 
         Talker_PCD(point_cloud_floor_pcd, 0)
-        print('7: {}'.format(time.time()-time_0))
         print('Time for detecting objects on floor: {} '.format(time.time() - start_time1))
         return traffic_light_floor    
 
@@ -177,7 +166,8 @@ def DetectObjects(data_1,data_2,drive_mode):
             TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
             object_detected = True
             print('***********************')
-            print('Stop: ', time.time()-start_time)
+            print('Stop Diff Time: ', time.time()-start_time)
+            print('UNIX Stop: ', time.time())
             print('Freq: ', 1/(time.time()-start_time))
             pub_stop_time.publish(time.time())
             # sys.stdout.write('\rStop - Time elapsed: %.5f' % (time.time() - start_time))
@@ -190,11 +180,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         print("Error: unable to start thread")
         print(e)
 
-
-
-
-def CreateMarker(polygon,i,rgb):
-    
+def CreateMarker(polygon,i,rgb):   
     marker = Marker()
     marker.header.frame_id = "cam_1_link"
     marker.id = i
@@ -270,9 +256,6 @@ def DetectTraffic(objects,load,drive_mode):
                     object_in_zone.append(6)
         return [min(object_in_zone)]
 
-
-    
-        
 
 def visualize_bounding_boxes(boxes):
     marker_pub = rospy.Publisher('visualization_marker', Marker, queue_size=10)
