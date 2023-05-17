@@ -60,6 +60,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         mask = point_cloud[:, 2] <= 0.1
         point_cloud_floor = point_cloud[mask]
         point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
+        print('###########################################################################')
         #print('1: {}'.format(time.time()))
         #print('2: {}'.format(time.time()-time_0))
         plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.5, threshold=0.005, init_n=3, iterations=100)
