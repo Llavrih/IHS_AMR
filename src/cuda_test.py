@@ -53,7 +53,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         time_0 = time.time()
 
         # Escape room for increasing the speed.
-        original_box = DrawBoxAtPoint(0.5,1,lenght=2 + 0.4, r=0, g=1 , b=0.3)
+        original_box = DrawBoxAtPoint(0.5,1,lenght=3 + 0.4, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
         point_original = o3d.geometry.PointCloud.crop(point_original,original_box_PCD)
