@@ -32,6 +32,7 @@ import sys
 import cProfile
 import pstats
 from io import StringIO
+import csv
 
 
 global objects_detected 
@@ -41,122 +42,132 @@ object_detected = True
 def DetectObjects(data_1,data_2,drive_mode):
     global objects_detected 
     object_detected = False
-    print('_______________________')
-    print('Time od calling DetectObjects: ',time.time())
+    #print('_______________________')
+    #print('Time od calling DetectObjects: ',time.time())
     start_time = time.time()
     load = 0.5
     point_original = combinePCD(data_1,data_2)
-    print('PCD1 + PCD2: {}'.format(time.time()-start_time))
+    #print('PCD1 + PCD2: {}'.format(time.time()-start_time))
     
     def DetectObjectsOnFloor(point_original, drive_mode,load):
         start_time1 = time.time()
         time_0 = time.time()
 
         # Escape room for increasing the speed.
-        original_box = DrawBoxAtPoint(0.5,1,lenght=3 + 0.4, r=0, g=1 , b=0.3)
+        original_box = DrawBoxAtPoint(0.5,1,lenght=4 + 0.4, r=0, g=1 , b=0.3)
         original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
         origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
         point_original = o3d.geometry.PointCloud.crop(point_original,original_box_PCD)
         point_cloud = PCDToNumpy(point_original)
-        mask = point_cloud[:, 2] <= 0.1
+        mask = point_cloud[:, 2] <= 0.15
         point_cloud_floor = point_cloud[mask]
-        point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
+        mask = point_cloud_floor[:, 2] >= 0.015
+        point_cloud_floor = point_cloud_floor[mask]
+        if np.size(point_cloud_floor) > 3:
+            point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
+            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.8, threshold=0.02, init_n=3, iterations=200)
 
-        plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.7, threshold=0.01, init_n=3, iterations=100)
+            planes_np = []
+            boxes = []
 
-        planes_np = []
-        boxes = []
+            for _, plane in plane_list:
+                box = NumpyToPCD(plane).get_oriented_bounding_box()
+                boxes.append(box)
+                planes_np.append(plane)
 
-        for _, plane in plane_list:
-            box = NumpyToPCD(plane).get_oriented_bounding_box()
-            boxes.append(box)
-            planes_np.append(plane)
+            planes_np = np.concatenate(planes_np, axis=0)
+            index_arr_new = np.concatenate(index_arr, axis=0)
+            outlier = o3d.geometry.PointCloud.select_by_index(point_cloud_floor_pcd, index_arr_new, invert=True)
+            outlier_np = PCDToNumpy(outlier)
 
-        planes_np = np.concatenate(planes_np, axis=0)
-        index_arr_new = np.concatenate(index_arr, axis=0)
-        outlier = o3d.geometry.PointCloud.select_by_index(point_cloud_floor_pcd, index_arr_new, invert=True)
-        outlier_np = PCDToNumpy(outlier)
+            planes_mask = ~np.isin(outlier_np, planes_np).any(axis=1)
+            objects = outlier_np[planes_mask]
 
-        planes_mask = ~np.isin(outlier_np, planes_np).any(axis=1)
-        objects = outlier_np[planes_mask]
-
-        cl_arr = o3d.geometry.PointCloud()
-        radii = np.array([0.002 + 0.002 * i for i in range(0, 4, 1)])
-        nb_points = np.array([8 + 1 * i for i in range(0, 4, 1)])
-        distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
-        for i in range(4):
-            distance_mask = abs(objects[:, 0]) <= distance_cut[i]
-            objects_cut = objects[distance_mask]
-            if len(objects_cut) > 0:
-                cl = o3d.geometry.PointCloud()
-                cl.points = o3d.utility.Vector3dVector(objects_cut)
-                cl, _ = cl.remove_radius_outlier(nb_points=nb_points[i], radius=radii[i])
-                cl_arr += cl
-        objects_viz = cl_arr
-        objects_viz_np = PCDToNumpy(objects_viz)
-        # objects_viz = NumpyToPCD(objects)
-        # objects_viz_np = objects
-        
-        if np.size(objects_viz_np) > 5:
-            #centers_pcd = clusteringObjects(objects_viz_np)
+            cl_arr = o3d.geometry.PointCloud()
+            radii = np.array([0.005 + 0.002 * i for i in range(0, 4, 1)])
+            nb_points = np.array([10 + 1 * i for i in range(0, 4, 1)])
+            distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
+            for i in range(4):
+                distance_mask = abs(objects[:, 0]) <= distance_cut[i]
+                objects_cut = objects[distance_mask]
+                if len(objects_cut) > 0:
+                    cl = o3d.geometry.PointCloud()
+                    cl.points = o3d.utility.Vector3dVector(objects_cut)
+                    cl, _ = cl.remove_radius_outlier(nb_points=nb_points[i], radius=radii[i])
+                    cl_arr += cl
+            objects_viz = cl_arr
+            objects_viz_np = PCDToNumpy(objects_viz)
+            # objects_viz = NumpyToPCD(objects)
+            # objects_viz_np = objects
             
-            traffic_light_floor = DetectTraffic(objects_viz_np, load, drive_mode)
-            #TalkerTrafficLight(min(traffic_light_floor),1)
-            
-            #Talker_PCD(centers_pcd, 4)
-            Talker_PCD(objects_viz, 1)
-        else:
-            traffic_light_floor = [6]
-            #TalkerTrafficLight(min(traffic_light_floor),1)
+            if np.size(objects_viz_np) > 5:
+                #centers_pcd = clusteringObjects(objects_viz_np)
+                
+                traffic_light_floor = DetectTraffic(objects_viz_np, load, drive_mode)
+                #TalkerTrafficLight(min(traffic_light_floor),1)
+                
+                #Talker_PCD(centers_pcd, 4)
+                Talker_PCD(objects_viz, 1)
+            else:
+                traffic_light_floor = [6]
+                #TalkerTrafficLight(min(traffic_light_floor),1)
 
-        Talker_PCD(point_cloud_floor_pcd, 0)
-        print('Time for detecting objects on floor: {} '.format(time.time() - start_time1))
-        return traffic_light_floor    
+            Talker_PCD(point_cloud_floor_pcd, 0)
+            print('Time for detecting objects on floor: {} '.format(time.time() - start_time1))
+            return traffic_light_floor 
+        else: return [6]   
 
     def DetectObjectsInTheAir(point_original,drive_mode,load):
-        
+        '''
         start_time2 = time.time()
         traffic_light_up = []
         point_cloud = PCDToNumpy(point_original)
         mask = point_cloud[:, 2] >= 0.1
         point_cloud_up = point_cloud[mask]
-        point_cloud_up = (DownSample((point_cloud_up),0.01))
-        point_cloud_up_pcd = NumpyToPCD(point_cloud_up)
-        point_cloud_up_pcd= o3d.geometry.PointCloud.random_down_sample(point_cloud_up_pcd,0.9)
-        point_cloud_up_pcd= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up_pcd,8)
-        downsampled_original_np = PCDToNumpy(point_cloud_up_pcd)
-        plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.55, threshold=0.1, init_n=3, iterations=50)
-        planes = []
-        boxes = []
-        
-        """find boxes for planes"""
-        for _, plane in plane_list:
-            box = NumpyToPCD(plane).get_oriented_bounding_box()
-            planes.append(plane)
-            boxes.append(box)
+        if np.size(point_cloud_up) > 3:
+           
+            point_cloud_up = (DownSample((point_cloud_up),0.01))
+            point_cloud_up_pcd = NumpyToPCD(point_cloud_up)
+            point_cloud_up_pcd= o3d.geometry.PointCloud.random_down_sample(point_cloud_up_pcd,0.80)
+            if (len(point_cloud_up_pcd.points)>3):
+                point_cloud_up_pcd= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up_pcd,8)
+            if (len(point_cloud_up_pcd.points)>3):
+                downsampled_original_np = PCDToNumpy(point_cloud_up_pcd)
+                plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.55, threshold=0.1, init_n=3, iterations=50)
+                planes = []
+                boxes = []
+                
+                """find boxes for planes"""
+                for _, plane in plane_list:
+                    box = NumpyToPCD(plane).get_oriented_bounding_box()
+                    planes.append(plane)
+                    boxes.append(box)
 
-        planes_np = (np.concatenate(planes, axis=0))
-        index_arr_new  =[]
-        index_arr = np.asarray(index_arr)[0]
-        for i in range(len(index_arr)):
-            index_arr_new = index_arr_new + index_arr[i]
-  
-        outlier =  o3d.geometry.PointCloud.select_by_index(point_cloud_up_pcd,index_arr_new,invert=True)
-        outlier = PCDToNumpy(outlier)
-        #print(outlier)
-        mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
-        objects = outlier[mask[:,2]]
+                planes_np = (np.concatenate(planes, axis=0))
+                index_arr_new  =[]
+                index_arr = np.asarray(index_arr)[0]
+                for i in range(len(index_arr)):
+                    index_arr_new = index_arr_new + index_arr[i]
         
-        objects_viz = NumpyToPCD(objects)
-        traffic_light_up = DetectTraffic(objects,load,drive_mode)
-        Talker_PCD(point_cloud_up_pcd,2)
-        Talker_PCD(objects_viz,3)
-        #TalkerTrafficLight(min(traffic_light_up),0)
-        print('Time for detecting objects in the air: {} '.format(time.time() - start_time2))
-        return traffic_light_up
+                outlier =  o3d.geometry.PointCloud.select_by_index(point_cloud_up_pcd,index_arr_new,invert=True)
+                outlier = PCDToNumpy(outlier)
+                #print(outlier)
+                mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
+                objects = outlier[mask[:,2]]
+                
+                objects_viz = NumpyToPCD(objects)
+                traffic_light_up = DetectTraffic(objects,load,drive_mode)
+                Talker_PCD(point_cloud_up_pcd,2)
+                Talker_PCD(objects_viz,3)
+                #TalkerTrafficLight(min(traffic_light_up),0)
+                print('Time for detecting objects in the air: {} '.format(time.time() - start_time2))
+                return traffic_light_up
+            else: return [6]
+        else: return [6]'''
+        return [6]
         
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             
             future1 = executor.submit(DetectObjectsOnFloor, point_original, drive_mode, load)
             future2 = executor.submit(DetectObjectsInTheAir, point_original, drive_mode, load)
@@ -165,15 +176,18 @@ def DetectObjects(data_1,data_2,drive_mode):
             traffic_light_up = future2.result()
             TalkerTrafficLight(min(min(traffic_light_floor),min(traffic_light_up)))
             object_detected = True
-            print('***********************')
-            print('Stop Diff Time: ', time.time()-start_time)
-            print('UNIX Stop: ', time.time())
+            #print('***********************')
+            #print('Stop Diff Time: ', time.time()-start_time)
+            #print('UNIX Stop: ', time.time())
             print('Freq: ', 1/(time.time()-start_time))
+            #with open('cuda_17.csv', 'a') as f:
+            #    writer = csv.writer(f)
+            #    writer.writerow([1/(time.time()-start_time)])
             pub_stop_time.publish(time.time())
             # sys.stdout.write('\rStop - Time elapsed: %.5f' % (time.time() - start_time))
             # sys.stdout.flush()
-            print('***********************')
-            print('_______________________')
+            #print('***********************')
+            #print('_______________________')
 
     except Exception as e:
         object_detected = True
@@ -313,23 +327,35 @@ def Rz(theta):
                    [ 0           , 0            , 1 ]])
 
 def combinePCD(data_1, data_2):  
-    x_translation = 0.34
-    y_translation = -0.2
+    x_translation = 0.35
+    y_translation = -0.18
     z_translation = 0.0
 
-    x_rot = 61.587353023478485/2 
-    y_rot = 0
+    x_rot = 62/2 
+    y_rot = -1
     z_rot = -90
     
     def processData1(data_1):
         start_time_all = time.time()
+        #time_vmes = time.time()
+        ##print('1: {}'.format(time.time()-time_vmes))
+        #time_vmes = time.time()
         pc1 = ros_numpy.numpify(data_1)
-        points1 = np.zeros((pc1.shape[0], 3), dtype=np.float64)
+        #print('1: {}'.format(time.time()-time_vmes))
+        #time_vmes = time.time()
         translation = [-x_translation, y_translation, z_translation]
+        #print('1: {}'.format(time.time()-time_vmes))
+        #time_vmes = time.time()
         points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
+        #print('1: {}'.format(time.time()-time_vmes))
+        #time_vmes = time.time()
         R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
+        #print('1: {}'.format(time.time()-time_vmes))
+        #time_vmes = time.time()
         points_PCD1 = NumpyToPCDT(points1,translation,R1)
-        print('PCD1: {}'.format(time.time()-start_time_all))
+        #print('1: {}'.format(time.time()-time_vmes))
+        #time_vmes = time.time()
+        #print('PCD1: {}'.format(time.time()-start_time_all))
         return points_PCD1
 
     def processData2(data_2):
@@ -339,19 +365,19 @@ def combinePCD(data_1, data_2):
         points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T
         R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
         points_PCD2 = NumpyToPCDT(points2,translation,R2)
-        print('PCD2: {}'.format(time.time()-start_time_all))
+        #print('PCD2: {}'.format(time.time()-start_time_all))
         return points_PCD2
 
     # Start two threads to process data_1 and data_2 simultaneously
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         # Submit the tasks and collect the future objects
         future1 = executor.submit(processData1, data_1)
-        future2 = executor.submit(processData2, data_2)
+        #future2 = executor.submit(processData2, data_2)
         # Wait for the tasks to complete and get the results
         points_PCD1 = future1.result()
-        points_PCD2 = future2.result()
+        #points_PCD2 = future2.result()
 
-    points_PCD = points_PCD1 + points_PCD2
+    points_PCD = points_PCD1# + points_PCD2
     R = np.array(Rx(-75))
     points_PCD.rotate(R, center=(0,0,0))
     original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
@@ -361,20 +387,29 @@ def combinePCD(data_1, data_2):
 
     return point_original
 
-def NumpyToPCDT(xyz,translation,R):
+#def NumpyToPCDT(xyz,translation,R):
     """ convert numpy ndarray to open3D point cloud
     Args:
         xyz (ndarray):
     Returns:
         [open3d.geometry.PointCloud]:
     """
-    pcd = o3d.t.geometry.PointCloud(o3c.Device("cuda:1"))
+    pcd = o3d.t.geometry.PointCloud(o3c.Device("CUDA:1"))
     pcd = o3d.t.geometry.PointCloud(xyz)
     pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.15)
     pcd.translate(translation)
     pcd.rotate(R, center=(translation))
     #pcd = o3d.t.geometry.PointCloud.to_legacy(pcd)
+    return pcd
 
+def NumpyToPCDT(xyz,translation,R):
+    # Ensuring the input is a tensor and it's on GPU.
+    xyz = o3c.Tensor(xyz, device=o3c.Device("CUDA:0"))
+    pcd = o3d.t.geometry.PointCloud(xyz)
+    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.3)
+    pcd.translate(translation)
+    pcd.rotate(R, center=(translation))
+    
     return pcd
 
 def Talker_PCD(pointcloud,num):
@@ -399,7 +434,7 @@ def Talker_PCD(pointcloud,num):
 
 def TalkerTrafficLight(traffic_light):
     print('Traffic light: {}'.format(traffic_light))
-    print('Time for traffic: {}'.format(time.time()))
+    #print('Time for traffic: {}'.format(time.time()))
     pub_traffic_light.publish(traffic_light)  
 
 
@@ -567,7 +602,7 @@ def NumpyToPCD(xyz):
     Returns:
         [open3d.geometry.PointCloud]:
     """
-    pcd = o3d.t.geometry.PointCloud(o3c.Device("cuda:0"))
+    xyz = o3c.Tensor(xyz, device=o3c.Device("CUDA:0"))
     pcd = o3d.t.geometry.PointCloud(xyz)
     pcd = o3d.t.geometry.PointCloud.to_legacy(pcd)
     return pcd
@@ -607,7 +642,7 @@ def PlaneRegression(points, threshold, init_n, iter):
         [ndarray, List]: 4 x 1 plane equation weights, List of plane point index
     """
 
-    pcd = o3d.t.geometry.PointCloud(o3c.Device("cuda:0"))
+
     pcd = o3d.t.geometry.PointCloud(points)
     
 
@@ -630,8 +665,8 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
     points_copy = points.copy()
     index_arr = []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        while len(points_copy) > min_ratio * N:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        while ((len(points_copy) > min_ratio * N) and (len(points_copy) > 3)):
             future = executor.submit(PlaneRegression, points_copy, threshold=threshold, init_n=init_n, iter=iterations)
             w, index = future.result()
             plane_list.append((w, points_copy[index]))
@@ -642,10 +677,10 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
 
 
 def DataCheck(data_1,data_2,drive_mode):
-    print('+++++++++++++++++++++++')
-    print('      DATA READY')
-    print('TIME: {}'.format(time.time()))
-    print('+++++++++++++++++++++++')
+    #print('+++++++++++++++++++++++')
+    #print('      DATA READY')
+    #print('TIME: {}'.format(time.time()))
+    #print('+++++++++++++++++++++++')
     global object_detected
     if object_detected == True:
         DetectObjects(data_1,data_2,drive_mode)
