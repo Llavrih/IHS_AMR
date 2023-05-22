@@ -65,7 +65,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         point_cloud_floor = point_cloud_floor[mask]
         if np.size(point_cloud_floor) > 3:
             point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
-            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.8, threshold=0.02, init_n=3, iterations=200)
+            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.8, threshold=0.01, init_n=3, iterations=200)
 
             planes_np = []
             boxes = []
@@ -328,7 +328,7 @@ def Rz(theta):
 
 def combinePCD(data_1, data_2):  
     x_translation = 0.35
-    y_translation = -0.18
+    y_translation = -0.2
     z_translation = 0.0
 
     x_rot = 62/2 
