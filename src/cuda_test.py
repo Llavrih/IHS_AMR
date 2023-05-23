@@ -52,12 +52,6 @@ def DetectObjects(data_1,data_2,drive_mode):
     def DetectObjectsOnFloor(point_original, drive_mode,load):
         start_time1 = time.time()
         time_0 = time.time()
-
-        # Escape room for increasing the speed.
-        original_box = DrawBoxAtPoint(0.5,1,lenght=4 + 0.4, r=0, g=1 , b=0.3)
-        original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
-        origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0, 0, 0])
-        point_original = o3d.geometry.PointCloud.crop(point_original,original_box_PCD)
         point_cloud = PCDToNumpy(point_original)
         mask = point_cloud[:, 2] <= 0.15
         point_cloud_floor = point_cloud[mask]
@@ -97,16 +91,17 @@ def DetectObjects(data_1,data_2,drive_mode):
                     cl_arr += cl
             objects_viz = cl_arr
             objects_viz_np = PCDToNumpy(objects_viz)
-            # objects_viz = NumpyToPCD(objects)
-            # objects_viz_np = objects
+            objects_viz = NumpyToPCD(objects)
+            objects_viz_np = objects
             
             if np.size(objects_viz_np) > 5:
-                #centers_pcd = clusteringObjects(objects_viz_np)
+                centers_pcd = clusteringObjects(objects_viz_np)
+                print('Center: {}'.format(np.asarray(centers_pcd.points)))
                 
                 traffic_light_floor = DetectTraffic(objects_viz_np, load, drive_mode)
                 #TalkerTrafficLight(min(traffic_light_floor),1)
                 
-                #Talker_PCD(centers_pcd, 4)
+                Talker_PCD(centers_pcd, 4)
                 Talker_PCD(objects_viz, 1)
             else:
                 traffic_light_floor = [6]
@@ -372,20 +367,24 @@ def combinePCD(data_1, data_2):
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         # Submit the tasks and collect the future objects
         future1 = executor.submit(processData1, data_1)
-        #future2 = executor.submit(processData2, data_2)
+        future2 = executor.submit(processData2, data_2)
         # Wait for the tasks to complete and get the results
         points_PCD1 = future1.result()
-        #points_PCD2 = future2.result()
+        points_PCD2 = future2.result()
 
-    points_PCD = points_PCD1# + points_PCD2
+    points_PCD = points_PCD1 + points_PCD2
     R = np.array(Rx(-75))
     points_PCD.rotate(R, center=(0,0,0))
-    original_box = DrawBoxAtPoint(0.5,1,lenght=4, r=0, g=1 , b=0.3)
-    original_box_PCD = NumpyToPCD(np.array((original_box.points), dtype=np.float64)).get_oriented_bounding_box()
     points_PCD = o3d.t.geometry.PointCloud.to_legacy(points_PCD)
-    point_original = o3d.geometry.PointCloud.crop(points_PCD,original_box_PCD)
+    min_bound = [-float('inf'), -float('inf'), -float('inf')]  # Use negative infinity for the lower bounds
+    max_bound = [3, 4, 3]  # Use 5 for the upper bounds
 
-    return point_original
+    # Create the bounding box
+    bb = o3d.geometry.AxisAlignedBoundingBox(min_bound=min_bound, max_bound=max_bound)
+    points_PCD = points_PCD.crop(bb)
+    
+
+    return points_PCD
 
 #def NumpyToPCDT(xyz,translation,R):
     """ convert numpy ndarray to open3D point cloud
