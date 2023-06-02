@@ -59,7 +59,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         point_cloud_floor = point_cloud_floor[mask]
         if np.size(point_cloud_floor) > 3:
             point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
-            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.8, threshold=0.01, init_n=3, iterations=200)
+            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.4, threshold=0.01, init_n=3, iterations=100)
 
             planes_np = []
             boxes = []
@@ -78,8 +78,8 @@ def DetectObjects(data_1,data_2,drive_mode):
             objects = outlier_np[planes_mask]
 
             cl_arr = o3d.geometry.PointCloud()
-            radii = np.array([0.005 + 0.002 * i for i in range(0, 4, 1)])
-            nb_points = np.array([10 + 1 * i for i in range(0, 4, 1)])
+            radii = np.array([0.002 + 0.002 * i for i in range(0, 4, 1)])
+            nb_points = np.array([20 + 1 * i for i in range(0, 4, 1)])
             distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
             for i in range(4):
                 distance_mask = abs(objects[:, 0]) <= distance_cut[i]
@@ -95,13 +95,21 @@ def DetectObjects(data_1,data_2,drive_mode):
             objects_viz_np = objects
             
             if np.size(objects_viz_np) > 5:
-                centers_pcd = clusteringObjects(objects_viz_np)
-                print('Center: {}'.format(np.asarray(centers_pcd.points)))
+                #centers_pcd = clusteringObjects(objects_viz_np)
+                '''for i in range(len(np.asarray(centers_pcd.points))):
+                
+                    if (abs(np.asarray(centers_pcd.points)[i][0]) < 0.1) and(abs(np.asarray(centers_pcd.points)[i][2]) < 0.1):
+                        print('########################')
+                        print('Center: {}'.format(np.asarray(centers_pcd.points)[i][1]))
+                        with open('distance.csv', 'a') as f:
+                            writer = csv.writer(f)
+                            writer.writerow([np.asarray(centers_pcd.points)[i][1]])
+                        print('########################')'''
                 
                 traffic_light_floor = DetectTraffic(objects_viz_np, load, drive_mode)
                 #TalkerTrafficLight(min(traffic_light_floor),1)
                 
-                Talker_PCD(centers_pcd, 4)
+                #Talker_PCD(centers_pcd, 4)
                 Talker_PCD(objects_viz, 1)
             else:
                 traffic_light_floor = [6]
@@ -321,6 +329,7 @@ def Rz(theta):
                    [ np.sin(np.deg2rad(theta)), np.cos(np.deg2rad(theta)) , 0 ],
                    [ 0           , 0            , 1 ]])
 
+
 def combinePCD(data_1, data_2):  
     x_translation = 0.35
     y_translation = -0.2
@@ -332,35 +341,29 @@ def combinePCD(data_1, data_2):
     
     def processData1(data_1):
         start_time_all = time.time()
-        #time_vmes = time.time()
-        ##print('1: {}'.format(time.time()-time_vmes))
-        #time_vmes = time.time()
         pc1 = ros_numpy.numpify(data_1)
-        #print('1: {}'.format(time.time()-time_vmes))
-        #time_vmes = time.time()
+        pc1 = pc1[::2]
         translation = [-x_translation, y_translation, z_translation]
-        #print('1: {}'.format(time.time()-time_vmes))
-        #time_vmes = time.time()
+        
         points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-        #print('1: {}'.format(time.time()-time_vmes))
-        #time_vmes = time.time()
+        #print('1111: {}'.format(time.time()-start_time_all))
         R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
-        #print('1: {}'.format(time.time()-time_vmes))
-        #time_vmes = time.time()
         points_PCD1 = NumpyToPCDT(points1,translation,R1)
-        #print('1: {}'.format(time.time()-time_vmes))
-        #time_vmes = time.time()
         #print('PCD1: {}'.format(time.time()-start_time_all))
+        #print('PCD1: {}'.format(points_PCD1))
         return points_PCD1
 
     def processData2(data_2):
         start_time_all = time.time()
-        pc2 = ros_numpy.numpify(data_2)
+        pc2 = ros_numpy.numpify(data_2,3)
+        pc2 = pc2[::4]  # this will keep every third point
         translation = [x_translation, y_translation, z_translation]
         points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T
+        #print('2222: {}'.format(time.time()-start_time_all))
         R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
         points_PCD2 = NumpyToPCDT(points2,translation,R2)
         #print('PCD2: {}'.format(time.time()-start_time_all))
+        #print('PCD2: {}'.format(points_PCD2))
         return points_PCD2
 
     # Start two threads to process data_1 and data_2 simultaneously
@@ -377,7 +380,7 @@ def combinePCD(data_1, data_2):
     points_PCD.rotate(R, center=(0,0,0))
     points_PCD = o3d.t.geometry.PointCloud.to_legacy(points_PCD)
     min_bound = [-float('inf'), -float('inf'), -float('inf')]  # Use negative infinity for the lower bounds
-    max_bound = [3, 4, 3]  # Use 5 for the upper bounds
+    max_bound = [3, 1, 3]  # Use 5 for the upper bounds
 
     # Create the bounding box
     bb = o3d.geometry.AxisAlignedBoundingBox(min_bound=min_bound, max_bound=max_bound)
@@ -386,26 +389,12 @@ def combinePCD(data_1, data_2):
 
     return points_PCD
 
-#def NumpyToPCDT(xyz,translation,R):
-    """ convert numpy ndarray to open3D point cloud
-    Args:
-        xyz (ndarray):
-    Returns:
-        [open3d.geometry.PointCloud]:
-    """
-    pcd = o3d.t.geometry.PointCloud(o3c.Device("CUDA:1"))
-    pcd = o3d.t.geometry.PointCloud(xyz)
-    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.15)
-    pcd.translate(translation)
-    pcd.rotate(R, center=(translation))
-    #pcd = o3d.t.geometry.PointCloud.to_legacy(pcd)
-    return pcd
-
 def NumpyToPCDT(xyz,translation,R):
     # Ensuring the input is a tensor and it's on GPU.
     xyz = o3c.Tensor(xyz, device=o3c.Device("CUDA:0"))
     pcd = o3d.t.geometry.PointCloud(xyz)
-    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.3)
+    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.15)
+    #pcd = o3d.t.geometry.PointCloud.voxel_down_sample(pcd,0.3)
     pcd.translate(translation)
     pcd.rotate(R, center=(translation))
     
