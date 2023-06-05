@@ -59,7 +59,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         point_cloud_floor = point_cloud_floor[mask]
         if np.size(point_cloud_floor) > 3:
             point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
-            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.4, threshold=0.01, init_n=3, iterations=100)
+            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.7, threshold=0.01, init_n=3, iterations=100)
 
             planes_np = []
             boxes = []
@@ -78,23 +78,24 @@ def DetectObjects(data_1,data_2,drive_mode):
             objects = outlier_np[planes_mask]
 
             cl_arr = o3d.geometry.PointCloud()
-            radii = np.array([0.002 + 0.002 * i for i in range(0, 4, 1)])
-            nb_points = np.array([20 + 1 * i for i in range(0, 4, 1)])
+            radii = np.array([0.005 + 0.001 * i for i in range(0, 4, 1)])
+            nb_points = np.array([2 + 1 * i for i in range(0, 4, 1)])
             distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
             for i in range(4):
-                distance_mask = abs(objects[:, 0]) <= distance_cut[i]
+                distance_mask = abs(objects[:, 1]) <= distance_cut[i]
                 objects_cut = objects[distance_mask]
                 if len(objects_cut) > 0:
                     cl = o3d.geometry.PointCloud()
                     cl.points = o3d.utility.Vector3dVector(objects_cut)
                     cl, _ = cl.remove_radius_outlier(nb_points=nb_points[i], radius=radii[i])
                     cl_arr += cl
+
             objects_viz = cl_arr
             objects_viz_np = PCDToNumpy(objects_viz)
-            objects_viz = NumpyToPCD(objects)
-            objects_viz_np = objects
+            objects_viz = NumpyToPCD(objects_viz_np)
+            #objects_viz_np = objects
             
-            if np.size(objects_viz_np) > 5:
+            if np.size(objects_viz_np) > 2:
                 #centers_pcd = clusteringObjects(objects_viz_np)
                 '''for i in range(len(np.asarray(centers_pcd.points))):
                 
@@ -183,6 +184,7 @@ def DetectObjects(data_1,data_2,drive_mode):
             #print('Stop Diff Time: ', time.time()-start_time)
             #print('UNIX Stop: ', time.time())
             print('Freq: ', 1/(time.time()-start_time))
+            print('TIME FREQ: {}'.format(time.time()))
             #with open('cuda_17.csv', 'a') as f:
             #    writer = csv.writer(f)
             #    writer.writerow([1/(time.time()-start_time)])
@@ -330,39 +332,48 @@ def Rz(theta):
                    [ 0           , 0            , 1 ]])
 
 
+import cupy as cp
+
 def combinePCD(data_1, data_2):  
-    x_translation = 0.35
-    y_translation = -0.2
+    x_translation = 0.345
+    y_translation = -0.175
     z_translation = 0.0
 
     x_rot = 62/2 
-    y_rot = -1
+    y_rot = -0
     z_rot = -90
+    start_time = time.time()
     
     def processData1(data_1):
         start_time_all = time.time()
         pc1 = ros_numpy.numpify(data_1)
-        pc1 = pc1[::2]
+        pc1 = pc1[::6]
         translation = [-x_translation, y_translation, z_translation]
         
         points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
+        #points1cp = cp.vstack((pc1['x'], pc1['y'], pc1['z'])).T
+        #points1 = cp.asnumpy(points1cp)
+
         #print('1111: {}'.format(time.time()-start_time_all))
         R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
         points_PCD1 = NumpyToPCDT(points1,translation,R1)
-        #print('PCD1: {}'.format(time.time()-start_time_all))
+        print('PCD1: {}'.format(time.time()-start_time_all))
         #print('PCD1: {}'.format(points_PCD1))
         return points_PCD1
 
     def processData2(data_2):
         start_time_all = time.time()
         pc2 = ros_numpy.numpify(data_2,3)
-        pc2 = pc2[::4]  # this will keep every third point
+        pc2 = pc2[::6]  # this will keep every third point
         translation = [x_translation, y_translation, z_translation]
-        points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T
-        #print('2222: {}'.format(time.time()-start_time_all))
+
+        #points2cp = cp.vstack((pc2['x'], pc2['y'], pc2['z'])).T
+        #points2 = cp.asnumpy(points2cp)
+        points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T   
+  
         R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
         points_PCD2 = NumpyToPCDT(points2,translation,R2)
-        #print('PCD2: {}'.format(time.time()-start_time_all))
+        print('PCD2: {}'.format(time.time()-start_time_all))
         #print('PCD2: {}'.format(points_PCD2))
         return points_PCD2
 
@@ -374,26 +385,29 @@ def combinePCD(data_1, data_2):
         # Wait for the tasks to complete and get the results
         points_PCD1 = future1.result()
         points_PCD2 = future2.result()
+    #points_PCD1 = processData1(data_1)
+    #points_PCD2 = processData2(data_2)
 
     points_PCD = points_PCD1 + points_PCD2
     R = np.array(Rx(-75))
     points_PCD.rotate(R, center=(0,0,0))
     points_PCD = o3d.t.geometry.PointCloud.to_legacy(points_PCD)
-    min_bound = [-float('inf'), -float('inf'), -float('inf')]  # Use negative infinity for the lower bounds
-    max_bound = [3, 1, 3]  # Use 5 for the upper bounds
+    min_bound = [-1.5, 0, 0]  # Use negative infinity for the lower bounds
+    max_bound = [1.5, 2, 3]  # Use 5 for the upper bounds
 
     # Create the bounding box
     bb = o3d.geometry.AxisAlignedBoundingBox(min_bound=min_bound, max_bound=max_bound)
     points_PCD = points_PCD.crop(bb)
-    
+    print('PCD combined {}'.format(time.time()-start_time))
 
     return points_PCD
 
 def NumpyToPCDT(xyz,translation,R):
     # Ensuring the input is a tensor and it's on GPU.
+    xyz = xyz.astype(np.float64)
     xyz = o3c.Tensor(xyz, device=o3c.Device("CUDA:0"))
     pcd = o3d.t.geometry.PointCloud(xyz)
-    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.15)
+    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.2)
     #pcd = o3d.t.geometry.PointCloud.voxel_down_sample(pcd,0.3)
     pcd.translate(translation)
     pcd.rotate(R, center=(translation))
@@ -667,7 +681,7 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
 def DataCheck(data_1,data_2,drive_mode):
     #print('+++++++++++++++++++++++')
     #print('      DATA READY')
-    #print('TIME: {}'.format(time.time()))
+    print('TIME DATA: {}'.format(time.time()))
     #print('+++++++++++++++++++++++')
     global object_detected
     if object_detected == True:
@@ -691,8 +705,8 @@ if __name__ == '__main__':
         data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         print("Started the program.")
-        queue_size = 10 # Adjust queue_size to control the rate of synchronization
-        slop = 1  # Adjust slop to control the tolerance for the time difference between messages
+        queue_size = 5 # Adjust queue_size to control the rate of synchronization
+        slop = 100  # Adjust slop to control the tolerance for the time difference between messages
         
         ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2, drive_mode], queue_size, slop, allow_headerless=True)
         ts.registerCallback(DataCheck)
