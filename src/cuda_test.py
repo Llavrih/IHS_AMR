@@ -336,7 +336,7 @@ import cupy as cp
 
 def combinePCD(data_1, data_2):  
     x_translation = 0.345
-    y_translation = -0.175
+    y_translation = -0.18
     z_translation = 0.0
 
     x_rot = 62/2 
@@ -350,11 +350,10 @@ def combinePCD(data_1, data_2):
         pc1 = pc1[::6]
         translation = [-x_translation, y_translation, z_translation]
         
-        points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-        #points1cp = cp.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-        #points1 = cp.asnumpy(points1cp)
+        #points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
+        points1cp = cp.vstack((pc1['x'], pc1['y'], pc1['z'])).T
+        points1 = cp.asnumpy(points1cp)
 
-        #print('1111: {}'.format(time.time()-start_time_all))
         R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
         points_PCD1 = NumpyToPCDT(points1,translation,R1)
         print('PCD1: {}'.format(time.time()-start_time_all))
@@ -362,31 +361,53 @@ def combinePCD(data_1, data_2):
         return points_PCD1
 
     def processData2(data_2):
-        start_time_all = time.time()
+        start_time_all = time.time()     
         pc2 = ros_numpy.numpify(data_2,3)
         pc2 = pc2[::6]  # this will keep every third point
-        translation = [x_translation, y_translation, z_translation]
-
-        #points2cp = cp.vstack((pc2['x'], pc2['y'], pc2['z'])).T
-        #points2 = cp.asnumpy(points2cp)
-        points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T   
-  
+        translation = [x_translation, y_translation, z_translation]       
+        start_time = time.time()
+        #points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T  
+        points2cp = cp.vstack((pc2['x'], pc2['y'], pc2['z'])).T
+        points2 = cp.asnumpy(points2cp)
+        print('Stack {}'.format(time.time()-start_time))
+        start_time = time.time()
         R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
         points_PCD2 = NumpyToPCDT(points2,translation,R2)
+        print('NP To PCD {}'.format(time.time()-start_time))
         print('PCD2: {}'.format(time.time()-start_time_all))
         #print('PCD2: {}'.format(points_PCD2))
         return points_PCD2
+    
+    def processData(data_1,data_2):
+        pc1 = ros_numpy.numpify(data_1)
+        pc1 = pc1[::3]
+        translation = [-x_translation, y_translation, z_translation]
+        points1cp = cp.vstack((pc1['x'], pc1['y'], pc1['z'])).T
+        points1 = cp.asnumpy(points1cp)
+        R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
+        points_PCD1 = NumpyToPCDT(points1,translation,R1)
+        start_time_all = time.time()     
+        pc2 = ros_numpy.numpify(data_2,3)
+        pc2 = pc2[::3]  # this will keep every third point
+        translation = [x_translation, y_translation, z_translation]       
+        points2cp = cp.vstack((pc2['x'], pc2['y'], pc2['z'])).T
+        points2 = cp.asnumpy(points2cp)
+        R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
+        points_PCD2 = NumpyToPCDT(points2,translation,R2)
+
+        return points_PCD1,points_PCD2
 
     # Start two threads to process data_1 and data_2 simultaneously
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+    '''
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         # Submit the tasks and collect the future objects
         future1 = executor.submit(processData1, data_1)
         future2 = executor.submit(processData2, data_2)
         # Wait for the tasks to complete and get the results
         points_PCD1 = future1.result()
         points_PCD2 = future2.result()
-    #points_PCD1 = processData1(data_1)
-    #points_PCD2 = processData2(data_2)
+    '''
+    points_PCD1,points_PCD2 = processData(data_1,data_2)
 
     points_PCD = points_PCD1 + points_PCD2
     R = np.array(Rx(-75))
@@ -404,11 +425,9 @@ def combinePCD(data_1, data_2):
 
 def NumpyToPCDT(xyz,translation,R):
     # Ensuring the input is a tensor and it's on GPU.
-    xyz = xyz.astype(np.float64)
-    xyz = o3c.Tensor(xyz, device=o3c.Device("CUDA:0"))
+    xyz = o3c.Tensor(xyz,dtype=o3c.float32 ,device=o3c.Device("CUDA:0"))
     pcd = o3d.t.geometry.PointCloud(xyz)
-    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.2)
-    #pcd = o3d.t.geometry.PointCloud.voxel_down_sample(pcd,0.3)
+    pcd = o3d.t.geometry.PointCloud.random_down_sample(pcd,0.3)
     pcd.translate(translation)
     pcd.rotate(R, center=(translation))
     
