@@ -7,6 +7,7 @@ from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Float64
 from std_msgs.msg import UInt8
 from geometry_msgs.msg import Twist
+from smartgv_realsense.msg import CameraTrafficLight
 import sensor_msgs.point_cloud2 as pc2
 import ros_numpy
 import numpy as np
@@ -95,7 +96,7 @@ def DetectObjects(data_1,data_2,drive_mode):
             objects_viz = NumpyToPCD(objects_viz_np)
             #objects_viz_np = objects
             
-            if np.size(objects_viz_np) > 2:
+            if np.size(objects_viz_np) > 0:
                 #centers_pcd = clusteringObjects(objects_viz_np)
                 '''for i in range(len(np.asarray(centers_pcd.points))):
                 
@@ -414,12 +415,12 @@ def combinePCD(data_1, data_2):
     points_PCD.rotate(R, center=(0,0,0))
     points_PCD = o3d.t.geometry.PointCloud.to_legacy(points_PCD)
     min_bound = [-1.5, 0, 0]  # Use negative infinity for the lower bounds
-    max_bound = [1.5, 2, 3]  # Use 5 for the upper bounds
+    max_bound = [1.5, 4, 3]  # Use 5 for the upper bounds
 
     # Create the bounding box
     bb = o3d.geometry.AxisAlignedBoundingBox(min_bound=min_bound, max_bound=max_bound)
     points_PCD = points_PCD.crop(bb)
-    print('PCD combined {}'.format(time.time()-start_time))
+    #print('PCD combined {}'.format(time.time()-start_time))
 
     return points_PCD
 
@@ -455,8 +456,7 @@ def Talker_PCD(pointcloud,num):
 
 def TalkerTrafficLight(traffic_light):
     print('Traffic light: {}'.format(traffic_light))
-    #print('Time for traffic: {}'.format(time.time()))
-    pub_traffic_light.publish(traffic_light)  
+    pub_traffic_light.publish(rospy.Time.now(),traffic_light)  
 
 
 def clusteringObjects(objects):
@@ -741,7 +741,7 @@ if __name__ == '__main__':
         pub_air = rospy.Publisher('/pointcloud_air', PointCloud2, queue_size=10)
         pub_objects_air = rospy.Publisher('/pointcloud_objects_air', PointCloud2, queue_size=10)
         pub_clusters = rospy.Publisher('/pointcloud_clusters', PointCloud2, queue_size=10)
-        pub_traffic_light = rospy.Publisher('/traffic_light', Float64, queue_size=10)
+        pub_traffic_light = rospy.Publisher('/traffic_light', CameraTrafficLight, queue_size=10)
         polygon_pub = rospy.Publisher("/polygons", MarkerArray, queue_size=1)
         active_polygon_pub = rospy.Publisher("/active_polygons", MarkerArray, queue_size=1)
         pub_stop_time = rospy.Publisher('/realsense_freq', Float64, queue_size=10)
