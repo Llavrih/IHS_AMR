@@ -456,7 +456,32 @@ def Talker_PCD(pointcloud,num):
 
 def TalkerTrafficLight(traffic_light):
     print('Traffic light: {}'.format(traffic_light))
+    traffic_light = TrafficLightCounter(traffic_light)
     pub_traffic_light.publish(rospy.Time.now(),traffic_light)  
+
+# Initialize an array with seven elements, all set to 6.
+traffic_light_arr = [6]*7
+
+def TrafficLightCounter(traffic_light):
+    # Declare traffic_light_arr as a global variable to modify the array defined outside the function.
+    global traffic_light_arr
+
+    # Check if the incoming traffic light value is less than or equal to the minimum value in the array,
+    # and if there are more than two instances of this value in the array.
+    if traffic_light <= min(traffic_light_arr) and (traffic_light_arr.count(traffic_light) > 2):
+        # If the above condition is true, set 'light' to the incoming traffic light value.
+        light = traffic_light
+    else:
+        # If the condition is not met, set 'light' to the first value in the traffic_light_arr array.
+        light = traffic_light_arr[0]
+    
+    # Add the incoming traffic light value to the beginning of the array,
+    # and remove the last element to keep the array length the same.
+    traffic_light_arr = [traffic_light] + traffic_light_arr[:-1]
+
+    return light
+
+
 
 
 def clusteringObjects(objects):
