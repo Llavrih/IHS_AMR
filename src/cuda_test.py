@@ -460,7 +460,7 @@ def TalkerTrafficLight(traffic_light):
     pub_traffic_light.publish(rospy.Time.now(),traffic_light)  
 
 # Initialize an array with seven elements, all set to 6.
-traffic_light_arr = [6]*7
+traffic_light_arr = [6]*10
 
 def TrafficLightCounter(traffic_light):
     # Declare traffic_light_arr as a global variable to modify the array defined outside the function.
@@ -468,7 +468,7 @@ def TrafficLightCounter(traffic_light):
 
     # Check if the incoming traffic light value is less than or equal to the minimum value in the array,
     # and if there are more than two instances of this value in the array.
-    if traffic_light <= min(traffic_light_arr) and (traffic_light_arr.count(traffic_light) > 2):
+    if traffic_light <= min(traffic_light_arr) and (traffic_light_arr.count(traffic_light) > 3):
         # If the above condition is true, set 'light' to the incoming traffic light value.
         light = traffic_light
     else:
