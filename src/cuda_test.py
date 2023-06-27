@@ -60,7 +60,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         point_cloud_floor = point_cloud_floor[mask]
         if np.size(point_cloud_floor) > 3:
             point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
-            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.7, threshold=0.01, init_n=3, iterations=100)
+            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.8, threshold=0.005, init_n=3, iterations=100)
 
             planes_np = []
             boxes = []
@@ -118,7 +118,7 @@ def DetectObjects(data_1,data_2,drive_mode):
                 #TalkerTrafficLight(min(traffic_light_floor),1)
 
             Talker_PCD(point_cloud_floor_pcd, 0)
-            print('Time for detecting objects on floor: {} '.format(time.time() - start_time1))
+            #print('Time for detecting objects on floor: {} '.format(time.time() - start_time1))
             return traffic_light_floor 
         else: return [6]   
 
@@ -184,8 +184,8 @@ def DetectObjects(data_1,data_2,drive_mode):
             #print('***********************')
             #print('Stop Diff Time: ', time.time()-start_time)
             #print('UNIX Stop: ', time.time())
-            print('Freq: ', 1/(time.time()-start_time))
-            print('TIME FREQ: {}'.format(time.time()))
+            #print('Freq: ', 1/(time.time()-start_time))
+            #print('TIME FREQ: {}'.format(time.time()))
             #with open('cuda_17.csv', 'a') as f:
             #    writer = csv.writer(f)
             #    writer.writerow([1/(time.time()-start_time)])
@@ -337,7 +337,7 @@ import cupy as cp
 
 def combinePCD(data_1, data_2):  
     x_translation = 0.345
-    y_translation = -0.18
+    y_translation = -0.19
     z_translation = 0.0
 
     x_rot = 62/2 
@@ -465,19 +465,23 @@ traffic_light_arr = [6]*10
 def TrafficLightCounter(traffic_light):
     # Declare traffic_light_arr as a global variable to modify the array defined outside the function.
     global traffic_light_arr
-
+    '''
     # Check if the incoming traffic light value is less than or equal to the minimum value in the array,
     # and if there are more than two instances of this value in the array.
-    if traffic_light <= min(traffic_light_arr) and (traffic_light_arr.count(traffic_light) > 3):
+    if traffic_light <= min(traffic_light_arr) and (traffic_light_arr.count(traffic_light) > 1):
         # If the above condition is true, set 'light' to the incoming traffic light value.
         light = traffic_light
     else:
         # If the condition is not met, set 'light' to the first value in the traffic_light_arr array.
         light = traffic_light_arr[0]
-    
+    '''   
     # Add the incoming traffic light value to the beginning of the array,
     # and remove the last element to keep the array length the same.
     traffic_light_arr = [traffic_light] + traffic_light_arr[:-1]
+    min_tl = min(traffic_light_arr)
+    if (traffic_light_arr.count(min_tl) > 1):
+        light = min_tl
+    else: light = traffic_light
 
     return light
 
@@ -622,7 +626,7 @@ def toc(tempBool=True):
     # Prints the time difference yielded by generator instance TicToc
     tempTimeInterval = next(TicToc)
     if tempBool:
-        #print( "Elapsed time: %f seconds.\n" %tempTimeInterval )
+        print( "Elapsed time: %f seconds.\n" %tempTimeInterval )
         print( "Elapsed frequency: %f Hz.\n" %tempTimeInterval )
 
 def tic():
@@ -725,7 +729,7 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
 def DataCheck(data_1,data_2,drive_mode):
     #print('+++++++++++++++++++++++')
     #print('      DATA READY')
-    print('TIME DATA: {}'.format(time.time()))
+    #print('TIME DATA: {}'.format(time.time()))
     #print('+++++++++++++++++++++++')
     global object_detected
     if object_detected == True:
