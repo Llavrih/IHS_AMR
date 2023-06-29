@@ -60,7 +60,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         point_cloud_floor = point_cloud_floor[mask]
         if np.size(point_cloud_floor) > 3:
             point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
-            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.8, threshold=0.005, init_n=3, iterations=100)
+            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.9, threshold=0.005, init_n=3, iterations=100)
 
             planes_np = []
             boxes = []
@@ -79,8 +79,8 @@ def DetectObjects(data_1,data_2,drive_mode):
             objects = outlier_np[planes_mask]
 
             cl_arr = o3d.geometry.PointCloud()
-            radii = np.array([0.005 + 0.001 * i for i in range(0, 4, 1)])
-            nb_points = np.array([2 + 1 * i for i in range(0, 4, 1)])
+            radii = np.array([0.005 + 0.005 * i for i in range(0, 4, 1)])
+            nb_points = np.array([4 + 1 * i for i in range(0, 4, 1)])
             distance_cut = np.array([i * 1 for i in range(0, 4, 1)])
             for i in range(4):
                 distance_mask = abs(objects[:, 1]) <= distance_cut[i]
@@ -93,6 +93,8 @@ def DetectObjects(data_1,data_2,drive_mode):
 
             objects_viz = cl_arr
             objects_viz_np = PCDToNumpy(objects_viz)
+            mask = objects_viz_np[:, 2] < 0.05
+            objects_viz_np = objects_viz_np[mask]
             objects_viz = NumpyToPCD(objects_viz_np)
             #objects_viz_np = objects
             
@@ -337,47 +339,17 @@ import cupy as cp
 
 def combinePCD(data_1, data_2):  
     x_translation = 0.345
-    y_translation = -0.19
-    z_translation = 0.0
+    y_translation = -0.195
 
-    x_rot = 62/2 
-    y_rot = -0
-    z_rot = -90
+    z_translation = -0.00
+
+    x_rot_1 = 60/2 
+    y_rot_1 = -0.5
+    z_rot_1 = -90
+    x_rot_2 = 60/2 
+    y_rot_2= -1.5
+    z_rot_2 = -87
     start_time = time.time()
-    
-    def processData1(data_1):
-        start_time_all = time.time()
-        pc1 = ros_numpy.numpify(data_1)
-        pc1 = pc1[::6]
-        translation = [-x_translation, y_translation, z_translation]
-        
-        #points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-        points1cp = cp.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-        points1 = cp.asnumpy(points1cp)
-
-        R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
-        points_PCD1 = NumpyToPCDT(points1,translation,R1)
-        print('PCD1: {}'.format(time.time()-start_time_all))
-        #print('PCD1: {}'.format(points_PCD1))
-        return points_PCD1
-
-    def processData2(data_2):
-        start_time_all = time.time()     
-        pc2 = ros_numpy.numpify(data_2,3)
-        pc2 = pc2[::6]  # this will keep every third point
-        translation = [x_translation, y_translation, z_translation]       
-        start_time = time.time()
-        #points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T  
-        points2cp = cp.vstack((pc2['x'], pc2['y'], pc2['z'])).T
-        points2 = cp.asnumpy(points2cp)
-        print('Stack {}'.format(time.time()-start_time))
-        start_time = time.time()
-        R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
-        points_PCD2 = NumpyToPCDT(points2,translation,R2)
-        print('NP To PCD {}'.format(time.time()-start_time))
-        print('PCD2: {}'.format(time.time()-start_time_all))
-        #print('PCD2: {}'.format(points_PCD2))
-        return points_PCD2
     
     def processData(data_1,data_2):
         pc1 = ros_numpy.numpify(data_1)
@@ -385,15 +357,15 @@ def combinePCD(data_1, data_2):
         translation = [-x_translation, y_translation, z_translation]
         points1cp = cp.vstack((pc1['x'], pc1['y'], pc1['z'])).T
         points1 = cp.asnumpy(points1cp)
-        R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
+        R1 = np.array(Rz(z_rot_1) * Rx(-x_rot_1) * Ry(y_rot_1))
         points_PCD1 = NumpyToPCDT(points1,translation,R1)
         start_time_all = time.time()     
         pc2 = ros_numpy.numpify(data_2,3)
         pc2 = pc2[::3]  # this will keep every third point
-        translation = [x_translation, y_translation, z_translation]       
+        translation = [x_translation, y_translation-0.005, -z_translation]       
         points2cp = cp.vstack((pc2['x'], pc2['y'], pc2['z'])).T
         points2 = cp.asnumpy(points2cp)
-        R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
+        R2 = np.array(Rz(z_rot_2) * Rx(x_rot_2) * Ry(y_rot_2))
         points_PCD2 = NumpyToPCDT(points2,translation,R2)
 
         return points_PCD1,points_PCD2
