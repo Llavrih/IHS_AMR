@@ -38,15 +38,24 @@ import csv
 
 global objects_detected 
 object_detected = True
+last_drive_mode = 1
 # from memory_profiler import profile
 # @profile
-def DetectObjects(data_1,data_2,drive_mode):
+def DetectObjects(data_1,data_2):
+    global last_drive_mode
     global objects_detected 
+    drive_mode = drive_mode_cache.getLast()
+
+    if drive_mode != None:
+        last_drive_mode = drive_mode
+    if drive_mode == None:
+        drive_mode = last_drive_mode
+    CallCreateMarker(drive_mode)
     object_detected = False
     #print('_______________________')
     #print('Time od calling DetectObjects: ',time.time())
     start_time = time.time()
-    load = 0.5
+    load = 2.5
     point_original = combinePCD(data_1,data_2)
     #print('PCD1 + PCD2: {}'.format(time.time()-start_time))
     
@@ -60,7 +69,7 @@ def DetectObjects(data_1,data_2,drive_mode):
         point_cloud_floor = point_cloud_floor[mask]
         if np.size(point_cloud_floor) > 3:
             point_cloud_floor_pcd = NumpyToPCD(point_cloud_floor)
-            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.8, threshold=0.005, init_n=3, iterations=100)
+            plane_list, index_arr = DetectMultiPlanes((point_cloud_floor), min_ratio=0.8, threshold=0.02, init_n=3, iterations=100)
 
             planes_np = []
             boxes = []
@@ -92,7 +101,10 @@ def DetectObjects(data_1,data_2,drive_mode):
                     cl_arr += cl
 
             objects_viz = cl_arr
-            objects_viz_np = PCDToNumpy(objects_viz)
+            objects_viz_np = PCDToNumpy(objects_viz)   
+            mask = objects_viz_np[:, 2] > 0.005
+            objects_viz_np = objects_viz_np[mask]
+
             objects_viz = NumpyToPCD(objects_viz_np)
             #objects_viz_np = objects
             
@@ -123,44 +135,49 @@ def DetectObjects(data_1,data_2,drive_mode):
         else: return [6]   
 
     def DetectObjectsInTheAir(point_original,drive_mode,load):
-        '''
+        
         start_time2 = time.time()
         traffic_light_up = []
         point_cloud = PCDToNumpy(point_original)
-        mask = point_cloud[:, 2] >= 0.1
+        mask = point_cloud[:, 2] >= 0.5
         point_cloud_up = point_cloud[mask]
         if np.size(point_cloud_up) > 3:
            
-            point_cloud_up = (DownSample((point_cloud_up),0.01))
+            point_cloud_up = (DownSample((point_cloud_up),0.02))
             point_cloud_up_pcd = NumpyToPCD(point_cloud_up)
-            point_cloud_up_pcd= o3d.geometry.PointCloud.random_down_sample(point_cloud_up_pcd,0.80)
+            point_cloud_up_pcd= o3d.geometry.PointCloud.random_down_sample(point_cloud_up_pcd,0.30)
+            #if (len(point_cloud_up_pcd.points)>3):
+            #    point_cloud_up_pcd= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up_pcd,2)
             if (len(point_cloud_up_pcd.points)>3):
-                point_cloud_up_pcd= o3d.geometry.PointCloud.uniform_down_sample(point_cloud_up_pcd,8)
-            if (len(point_cloud_up_pcd.points)>3):
-                downsampled_original_np = PCDToNumpy(point_cloud_up_pcd)
-                plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.55, threshold=0.1, init_n=3, iterations=50)
-                planes = []
-                boxes = []
-                
-                """find boxes for planes"""
-                for _, plane in plane_list:
-                    box = NumpyToPCD(plane).get_oriented_bounding_box()
-                    planes.append(plane)
-                    boxes.append(box)
+                if (len(point_cloud_up_pcd.points)>100):
+                    downsampled_original_np = PCDToNumpy(point_cloud_up_pcd)
+                    plane_list, index_arr = DetectMultiPlanes((downsampled_original_np), min_ratio=0.9, threshold=0.05, init_n=3, iterations=3)
+                    planes = []
+                    boxes = []
+                    
+                    """find boxes for planes"""
+                    for _, plane in plane_list:
+                        box = NumpyToPCD(plane).get_oriented_bounding_box()
+                        planes.append(plane)
+                        boxes.append(box)
 
-                planes_np = (np.concatenate(planes, axis=0))
-                index_arr_new  =[]
-                index_arr = np.asarray(index_arr)[0]
-                for i in range(len(index_arr)):
-                    index_arr_new = index_arr_new + index_arr[i]
-        
-                outlier =  o3d.geometry.PointCloud.select_by_index(point_cloud_up_pcd,index_arr_new,invert=True)
-                outlier = PCDToNumpy(outlier)
-                #print(outlier)
-                mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
-                objects = outlier[mask[:,2]]
+                    planes_np = (np.concatenate(planes, axis=0))
+                    index_arr_new  =[]
+                    index_arr = np.asarray(index_arr)[0]
+                    for i in range(len(index_arr)):
+                        index_arr_new = index_arr_new + index_arr[i]
+            
+                    outlier =  o3d.geometry.PointCloud.select_by_index(point_cloud_up_pcd,index_arr_new,invert=True)
+                    outlier = PCDToNumpy(outlier)
+                    #print(outlier)
+                    mask = np.isin(outlier[:,:],(planes_np)[:,:], invert=True)
+                    objects = outlier[mask[:,2]]
+                    objects_viz = NumpyToPCD(objects)
+                else: 
+                    objects_viz = point_cloud_up_pcd
+                    objects = point_cloud_up
                 
-                objects_viz = NumpyToPCD(objects)
+                
                 traffic_light_up = DetectTraffic(objects,load,drive_mode)
                 Talker_PCD(point_cloud_up_pcd,2)
                 Talker_PCD(objects_viz,3)
@@ -168,8 +185,10 @@ def DetectObjects(data_1,data_2,drive_mode):
                 print('Time for detecting objects in the air: {} '.format(time.time() - start_time2))
                 return traffic_light_up
             else: return [6]
-        else: return [6]'''
+        else: return [6]
+        '''
         return [6]
+        '''
         
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -184,7 +203,7 @@ def DetectObjects(data_1,data_2,drive_mode):
             #print('***********************')
             #print('Stop Diff Time: ', time.time()-start_time)
             #print('UNIX Stop: ', time.time())
-            #print('Freq: ', 1/(time.time()-start_time))
+            print('Freq: ', 1/(time.time()-start_time))
             #print('TIME FREQ: {}'.format(time.time()))
             #with open('cuda_17.csv', 'a') as f:
             #    writer = csv.writer(f)
@@ -223,7 +242,7 @@ def CreateMarker(polygon,i,rgb):
     return marker
 
 def CallCreateMarker(drive_mode):
-    drive_mode = np.array(drive_mode.data)
+    drive_mode = drive_mode.data
     for i in range(6):
         marker_array = MarkerArray()
         marker = CreateMarker(drive_zones[drive_mode][i], i, [0,0,1])
@@ -231,8 +250,11 @@ def CallCreateMarker(drive_mode):
         polygon_pub.publish(marker_array)
 
 global drive_zones
-drive_zones = np.array([[[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]]],dtype=object)
-        
+drive_zones = np.array([[[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.68, 1.3], [-1.12, 0.6], [-0.63, -0.24], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.39, 2.14], [-1.45, 1.0], [-0.63, -0.38], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [0.05, 2.7], [-1.85, 1.3], [-0.63, -0.6], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.17, 3.1], [-2.45, 1.5], [-0.63, -0.9], [-0.35, 0.0]], [[-0.35, 0.0], [0.95, 0.0], [0.95, 0.64], [-0.32, 3.7], [-3.05, 2.0], [-0.63, -1.1], [-0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.68, 1.3], [1.12, 0.6], [0.63, -0.24], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.39, 2.14], [1.45, 1.0], [0.63, -0.38], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [-0.05, 2.7], [1.85, 1.3], [0.63, -0.6], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.17, 3.1], [2.45, 1.5], [0.63, -0.9], [0.35, 0.0]], [[0.35, 0.0], [-0.95, 0.0], [-0.95, 0.64], [0.32, 3.7], [3.05, 2.0], [0.63, -1.1], [0.35, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]], [[[0.0, 0.0], [0.8, 0.0], [0.8, 0.6], [-0.8, 0.6], [-0.8, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.85, 0.0], [0.85, 1.0], [-0.85, 1.0], [-0.85, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.7], [-1.0, 1.7], [-1.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.1, 0.0], [1.1, 2.5], [-1.1, 2.5], [-1.1, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.2, 0.0], [1.2, 3.2], [-1.2, 3.2], [-1.2, 0.0], [0.0, 0.0]], [[0.0, 0.0], [1.25, 0.0], [1.25, 3.8], [-1.25, 3.8], [-1.3, 0.0], [0.0, 0.0]]]], dtype=object) 
+#for i in range(0,len(drive_zones[0])):
+#    for j in range(0,len(drive_zones[0][0])):
+#        drive_zones[i][j] = np.multiply(drive_zones[i][j],1.05)
+ 
 def IsPointInsidePoly(x, y, polygon):
     n = len(polygon)
     inside = False
@@ -250,9 +272,11 @@ def IsPointInsidePoly(x, y, polygon):
 
     return inside
 
+import keyboard
+
 def DetectTraffic(objects,load,drive_mode):
     global drive_zones
-    drive_mode = np.array(drive_mode.data)
+    drive_mode = drive_mode.data
     object_in_zone = []  
     objects = sorted(objects, key=lambda x: x[1])
 
@@ -262,16 +286,22 @@ def DetectTraffic(objects,load,drive_mode):
     else: 
         first_1_percent = int(len(objects) * 0.01)  # Calculate the index corresponding to 5% of the list
         objects_1_percent = objects[:first_1_percent+1]  # Select the first 5% of objects 
+
         for obj in objects_1_percent:
             for i in range(6):
-                if IsPointInsidePoly(obj[0],(obj[1]),drive_zones[drive_mode][i]) == True:
-                    
+                if (IsPointInsidePoly(obj[0],(obj[1]),drive_zones[drive_mode][i]) == True) and (obj[2] < load):
+
+                    # višje kot je predmet majn časa ga vidisš
+                    if (obj[2] > 0.5) and (obj[2] < (0.7 + i*0.5)):
+                        object_in_zone.append(0)
+                        
                     #marker_array = MarkerArray()                        
                     # marker = CreateMarker(drive_zones[drive_mode][i], i, [1,0,0])
                     # marker_array.markers.append(marker)
                     # active_polygon_pub.publish(marker_array)
 
                     object_in_zone.append(i)
+
                 else:
                     object_in_zone.append(6)
         return [min(object_in_zone)]
@@ -337,47 +367,18 @@ import cupy as cp
 
 def combinePCD(data_1, data_2):  
     x_translation = 0.345
-    y_translation = -0.19
-    z_translation = 0.0
+    y_translation = -0.185
+    z_translation = -0.00
 
-    x_rot = 62/2 
-    y_rot = -0
-    z_rot = -90
+    x_rot_1 = 60/2 
+    #y_rot_1 = -1
+    y_rot_1 = 0
+    z_rot_1 = -90
+    x_rot_2 = 60/2 
+    #y_rot_2= -2
+    y_rot_2 = 0
+    z_rot_2 = -90
     start_time = time.time()
-    
-    def processData1(data_1):
-        start_time_all = time.time()
-        pc1 = ros_numpy.numpify(data_1)
-        pc1 = pc1[::6]
-        translation = [-x_translation, y_translation, z_translation]
-        
-        #points1 = np.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-        points1cp = cp.vstack((pc1['x'], pc1['y'], pc1['z'])).T
-        points1 = cp.asnumpy(points1cp)
-
-        R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
-        points_PCD1 = NumpyToPCDT(points1,translation,R1)
-        print('PCD1: {}'.format(time.time()-start_time_all))
-        #print('PCD1: {}'.format(points_PCD1))
-        return points_PCD1
-
-    def processData2(data_2):
-        start_time_all = time.time()     
-        pc2 = ros_numpy.numpify(data_2,3)
-        pc2 = pc2[::6]  # this will keep every third point
-        translation = [x_translation, y_translation, z_translation]       
-        start_time = time.time()
-        #points2 = np.vstack((pc2['x'], pc2['y'], pc2['z'])).T  
-        points2cp = cp.vstack((pc2['x'], pc2['y'], pc2['z'])).T
-        points2 = cp.asnumpy(points2cp)
-        print('Stack {}'.format(time.time()-start_time))
-        start_time = time.time()
-        R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
-        points_PCD2 = NumpyToPCDT(points2,translation,R2)
-        print('NP To PCD {}'.format(time.time()-start_time))
-        print('PCD2: {}'.format(time.time()-start_time_all))
-        #print('PCD2: {}'.format(points_PCD2))
-        return points_PCD2
     
     def processData(data_1,data_2):
         pc1 = ros_numpy.numpify(data_1)
@@ -385,29 +386,19 @@ def combinePCD(data_1, data_2):
         translation = [-x_translation, y_translation, z_translation]
         points1cp = cp.vstack((pc1['x'], pc1['y'], pc1['z'])).T
         points1 = cp.asnumpy(points1cp)
-        R1 = np.array(Rz(z_rot) * Rx(-x_rot) * Ry(y_rot))
+        R1 = np.array(Rz(z_rot_1) * Rx(-x_rot_1) * Ry(y_rot_1))
         points_PCD1 = NumpyToPCDT(points1,translation,R1)
         start_time_all = time.time()     
         pc2 = ros_numpy.numpify(data_2,3)
         pc2 = pc2[::3]  # this will keep every third point
-        translation = [x_translation, y_translation, z_translation]       
+        translation = [x_translation, y_translation-0.005, -z_translation]       
         points2cp = cp.vstack((pc2['x'], pc2['y'], pc2['z'])).T
         points2 = cp.asnumpy(points2cp)
-        R2 = np.array(Rz(z_rot) * Rx(x_rot) * Ry(y_rot))
+        R2 = np.array(Rz(z_rot_2) * Rx(x_rot_2) * Ry(y_rot_2))
         points_PCD2 = NumpyToPCDT(points2,translation,R2)
 
         return points_PCD1,points_PCD2
 
-    # Start two threads to process data_1 and data_2 simultaneously
-    '''
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        # Submit the tasks and collect the future objects
-        future1 = executor.submit(processData1, data_1)
-        future2 = executor.submit(processData2, data_2)
-        # Wait for the tasks to complete and get the results
-        points_PCD1 = future1.result()
-        points_PCD2 = future2.result()
-    '''
     points_PCD1,points_PCD2 = processData(data_1,data_2)
 
     points_PCD = points_PCD1 + points_PCD2
@@ -415,7 +406,7 @@ def combinePCD(data_1, data_2):
     points_PCD.rotate(R, center=(0,0,0))
     points_PCD = o3d.t.geometry.PointCloud.to_legacy(points_PCD)
     min_bound = [-1.5, 0, 0]  # Use negative infinity for the lower bounds
-    max_bound = [1.5, 4, 3]  # Use 5 for the upper bounds
+    max_bound = [1.5, 2.5, 2.5]  # Use 5 for the upper bounds
 
     # Create the bounding box
     bb = o3d.geometry.AxisAlignedBoundingBox(min_bound=min_bound, max_bound=max_bound)
@@ -454,21 +445,47 @@ def Talker_PCD(pointcloud,num):
         pc.header.frame_id = "cam_1_link" 
         pub_clusters.publish(pc) 
 
+from pynput import keyboard
+
+# This function will be called when a key is pressed
+def on_press(key):
+    try:
+        if key.char == 'q':  # if key 'q' is pressed 
+            return False  # Stop listener
+    except AttributeError:
+        pass  # Handle special keys here if needed
+
 def TalkerTrafficLight(traffic_light):
-    print('Traffic light: {}'.format(traffic_light))
     traffic_light = TrafficLightCounter(traffic_light)
-    pub_traffic_light.publish(rospy.Time.now(),traffic_light)  
+    
+    if traffic_light == 0:
+        listener = keyboard.Listener(on_press=on_press)
+        listener.start()  # Start the listener
+        print('Obstacle is blocking the vehicle')
+        print('Press q when you moved the obstacle')
+        while listener.running:
+            # Put here the operations you want to perform in the loop
+            # For instance, we just print "Looping"
+            rospy.sleep(0.1)  # Avoid using 100% CPU, adjust the time as needed
+            pub_traffic_light.publish(rospy.Time.now(), 0)
+        
+    print('Traffic light: {}'.format(traffic_light))
+    pub_traffic_light.publish(rospy.Time.now(), traffic_light)
+
 
 # Initialize an array with seven elements, all set to 6.
 traffic_light_arr = [6]*10
-
+counter = 0
+old_light = 6
 def TrafficLightCounter(traffic_light):
     # Declare traffic_light_arr as a global variable to modify the array defined outside the function.
     global traffic_light_arr
+    global counter
+    global old_light
     '''
     # Check if the incoming traffic light value is less than or equal to the minimum value in the array,
     # and if there are more than two instances of this value in the array.
-    if traffic_light <= min(traffic_light_arr) and (traffic_light_arr.count(traffic_light) > 1):
+    if traffic_light <= min(traffic_light_arr) and (traffic_light_arr.count(traffic_light) > 2):
         # If the above condition is true, set 'light' to the incoming traffic light value.
         light = traffic_light
     else:
@@ -477,11 +494,26 @@ def TrafficLightCounter(traffic_light):
     '''   
     # Add the incoming traffic light value to the beginning of the array,
     # and remove the last element to keep the array length the same.
+
+    def distance_between_numbers(array, target, n):
+        indices = [i for i, x in enumerate(array) if x == target]
+        if len(indices) > 1:
+            for i in range(len(indices) - 1):
+                if indices[i+1] - indices[i] <= n:
+                    return 0
+        return 1
+
     traffic_light_arr = [traffic_light] + traffic_light_arr[:-1]
     min_tl = min(traffic_light_arr)
-    if (traffic_light_arr.count(min_tl) > 1):
+    if traffic_light != min_tl:
+        counter = counter + 1
+    else: counter = 0
+
+    if ((traffic_light_arr.count(min_tl) > 2) and counter < 4):
         light = min_tl
-    else: light = traffic_light
+
+    else: light = old_light
+    old_light = light
 
     return light
 
@@ -726,22 +758,24 @@ def DetectMultiPlanes(points, min_ratio, threshold, init_n, iterations):
     return plane_list, index_arr
 
 
-def DataCheck(data_1,data_2,drive_mode):
+def DataCheck(data_1,data_2):
     #print('+++++++++++++++++++++++')
     #print('      DATA READY')
     #print('TIME DATA: {}'.format(time.time()))
     #print('+++++++++++++++++++++++')
     global object_detected
+    drive_mode = drive_mode_cache.getLast()
     if object_detected == True:
-        DetectObjects(data_1,data_2,drive_mode)
+        DetectObjects(data_1,data_2)
    
 
 if __name__ == '__main__':
     try:
-        rospy.init_node('listener', anonymous=True)
+        rospy.init_node('camera_node', anonymous=True)
 
         print("Waiting for /drive_mode topic...")
-        drive_mode_msg = rospy.wait_for_message("/drive_mode", UInt8)
+        #drive_mode_msg = rospy.wait_for_message("/drive_mode", UInt8)
+        drive_mode_msg = rospy.wait_for_message("/lizard/drive_supervisor/mode", UInt8)
 
         print("Waiting for /cam_1/depth/color/points topic...")
         data_1_msg = rospy.wait_for_message("/cam_1/depth/color/points", PointCloud2)
@@ -749,21 +783,17 @@ if __name__ == '__main__':
         print("Waiting for /cam_2/depth/color/points topic...")
         data_2_msg = rospy.wait_for_message("/cam_2/depth/color/points", PointCloud2)
 
-        drive_mode = message_filters.Subscriber("/drive_mode", UInt8)
+        drive_mode_event = message_filters.Subscriber("/lizard/drive_supervisor/mode", UInt8)
+        drive_mode_cache = message_filters.Cache(drive_mode_event, cache_size=10, allow_headerless=True)
         data_1 = message_filters.Subscriber("/cam_1/depth/color/points", PointCloud2)
         data_2 = message_filters.Subscriber("/cam_2/depth/color/points", PointCloud2)
         print("Started the program.")
         queue_size = 5 # Adjust queue_size to control the rate of synchronization
         slop = 100  # Adjust slop to control the tolerance for the time difference between messages
         
-        ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2, drive_mode], queue_size, slop, allow_headerless=True)
+        ts = message_filters.ApproximateTimeSynchronizer([data_1, data_2], queue_size, slop, allow_headerless=True)
         ts.registerCallback(DataCheck)
         
-  
-        #ts.registerCallback(DetectObjects)
-
-        #ts.registerCallback(DetectObjectsOnFloor)
-        #ts.registerCallback(DetectObjectsInTheAir)
 
         pub = rospy.Publisher('/pointcloud', PointCloud2, queue_size=10)
         pub_objects = rospy.Publisher('/pointcloud_objects', PointCloud2, queue_size=10)
@@ -775,7 +805,7 @@ if __name__ == '__main__':
         active_polygon_pub = rospy.Publisher("/active_polygons", MarkerArray, queue_size=1)
         pub_stop_time = rospy.Publisher('/realsense_freq', Float64, queue_size=10)
 
-        rospy.Subscriber("/drive_mode",UInt8,CallCreateMarker)
+        #rospy.Subscriber("/lizard/drive_supervisor/mode",UInt8,CallCreateMarker)
             
 
    
